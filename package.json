@@ -1,0 +1,7 @@
+{
+  "name": "@kavara/mirepoix-monorepo",
+  "version": "0.0.1",
+  "description": "Kavara's internal Mirepoix distribution monorepo. Per ADR-001.",
+  "private": true,
+  "workspaces": ["packages/*"]
+}

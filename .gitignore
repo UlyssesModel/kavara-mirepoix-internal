@@ -35,3 +35,8 @@ sessions/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Bun workspaces / TypeScript build artifacts (Phase One)
+node_modules/
+packages/*/dist/
+*.tsbuildinfo
