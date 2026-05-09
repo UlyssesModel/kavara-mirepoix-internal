@@ -1,0 +1,37 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build artifacts
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# bundler outputs
+.bundles/
+*.bundle.tar.gz
+*.bundle.sig
+
+# session logs (local dev)
+.pi/
+sessions/
+*.session.jsonl
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
