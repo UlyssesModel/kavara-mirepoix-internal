@@ -161,3 +161,16 @@ working harness through sub-phase D. It must not be modified.
 Sub-phase B surface. The exports listed above are stable for sub-phase C.
 The surface is expected to grow when `@mirepoix/core` introduces the typed
 event bus (ADR-004) and the agent loop — neither is in scope here.
+
+## Local development
+
+Run from the repo root. See root-level docs for the full command reference.
+
+```bash
+bun install                                                    # install devDeps (once)
+bun x biome ci .                                               # lint + format check
+bun x biome check --write .                                    # auto-fix lint (Biome 2.x)
+bun x tsc --noEmit -p packages/ai/tsconfig.json               # type-check this package
+```
+
+CI runs all four steps automatically on every push and PR via `.github/workflows/ci.yml`.

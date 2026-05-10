@@ -132,3 +132,16 @@ modified.
 Sub-phase B surface. `tools`, `executeTool`, and `PACKAGE_NAME` are stable for
 sub-phase C. The sub-phase C event-bus integration will wrap `executeTool` from
 outside this package; no breaking changes to this surface are anticipated.
+
+## Local development
+
+Run from the repo root. See root-level docs for the full command reference.
+
+```bash
+bun install                                                    # install devDeps (once)
+bun x biome ci .                                               # lint + format check
+bun x biome check --write .                                    # auto-fix lint (Biome 2.x)
+bun x tsc --noEmit -p packages/coding/tsconfig.json           # type-check this package
+```
+
+CI runs all four steps automatically on every push and PR via `.github/workflows/ci.yml`.

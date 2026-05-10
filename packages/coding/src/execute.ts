@@ -8,10 +8,7 @@ import { dirname, resolve } from "node:path";
 
 import { runBash } from "./bash";
 
-export async function executeTool(
-  name: string,
-  args: Record<string, unknown>,
-): Promise<string> {
+export async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
   try {
     let result: string;
     if (name === "bash") {
