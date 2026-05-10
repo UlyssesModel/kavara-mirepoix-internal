@@ -1,0 +1,38 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+  "files": {
+    "includes": [
+      "**/*.ts",
+      "**/*.js",
+      "**/*.json",
+      "!phase-zero-spike",
+      "!node_modules",
+      "!dist",
+      "!.on-loop",
+      "!.claude",
+      "!**/*.md",
+      "!bun.lock",
+      "!bun.lockb",
+      "!**/*.tsbuildinfo",
+      "!packages/*/package.json"
+    ]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noShadowRestrictedNames": "off"
+      }
+    }
+  },
+  "assist": {
+    "enabled": false
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  }
+}

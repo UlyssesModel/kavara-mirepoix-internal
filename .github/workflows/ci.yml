@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint (Biome)
+        run: bun x biome ci .
+
+      - name: Type-check @mirepoix/ai
+        run: bun x tsc --noEmit -p packages/ai/tsconfig.json
+
+      - name: Type-check @mirepoix/coding
+        run: bun x tsc --noEmit -p packages/coding/tsconfig.json
+
+      - name: Smoke test — @mirepoix/ai surface
+        run: |
+          bun -e 'import * as ai from "./packages/ai/src/index.ts"; const keys = Object.keys(ai).sort(); const expected = ["PACKAGE_NAME","callProvider","extractJsonObjects","normalizeAssistantMessage","tryParseToolCallsFromContent"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("ai surface mismatch:", keys); process.exit(1); } console.log("ai surface OK");'
+
+      - name: Smoke test — @mirepoix/coding surface
+        run: |
+          bun -e 'import * as coding from "./packages/coding/src/index.ts"; const keys = Object.keys(coding).sort(); const expected = ["PACKAGE_NAME","executeTool","tools"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("coding surface mismatch:", keys); process.exit(1); } console.log("coding surface OK");'
+
+      - name: Smoke test — rehydration acceptance (FR-003)
+        run: |
+          bun -e 'import { tryParseToolCallsFromContent } from "./packages/ai/src/rehydrate.ts"; const c = tryParseToolCallsFromContent(`{"name": "write", "arguments": {"path": "/tmp/foo", "content": "bar"}}\n{"name": "read", "arguments": {"path": "/tmp/foo"}}`); if (c.length !== 2 || c[0].name !== "write" || c[1].name !== "read") { console.error("rehydration mismatch:", c); process.exit(1); } console.log("rehydration OK");'
+
+      - name: Spike-frozen guard
+        run: git diff --exit-code phase-zero-spike/
