@@ -28,6 +28,9 @@ jobs:
       - name: Type-check @mirepoix/coding
         run: bun x tsc --noEmit -p packages/coding/tsconfig.json
 
+      - name: Type-check @mirepoix/core
+        run: bun x tsc --noEmit -p packages/core/tsconfig.json
+
       - name: Smoke test — @mirepoix/ai surface
         run: |
           bun -e 'import * as ai from "./packages/ai/src/index.ts"; const keys = Object.keys(ai).sort(); const expected = ["PACKAGE_NAME","callProvider","extractJsonObjects","normalizeAssistantMessage","tryParseToolCallsFromContent"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("ai surface mismatch:", keys); process.exit(1); } console.log("ai surface OK");'
@@ -35,6 +38,10 @@ jobs:
       - name: Smoke test — @mirepoix/coding surface
         run: |
           bun -e 'import * as coding from "./packages/coding/src/index.ts"; const keys = Object.keys(coding).sort(); const expected = ["PACKAGE_NAME","executeTool","tools"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("coding surface mismatch:", keys); process.exit(1); } console.log("coding surface OK");'
+
+      - name: Smoke test — @mirepoix/core surface
+        run: |
+          bun -e 'import * as core from "./packages/core/src/index.ts"; const keys = Object.keys(core).sort(); const expected = ["Bus","PACKAGE_NAME","Session","createSessionLogger","run","schemaVersion"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("core surface mismatch:", keys); process.exit(1); } console.log("core surface OK");'
 
       - name: Smoke test — rehydration acceptance (FR-003)
         run: |
