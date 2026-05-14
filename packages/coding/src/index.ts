@@ -18,3 +18,10 @@ export { tools } from "./tools";
  * executeTool("bash", { command }). See execute.ts (spike lines 240-278).
  */
 export { executeTool } from "./execute";
+
+/**
+ * DEFAULT_SYSTEM_PROMPT — the in-package default system prompt, loaded once
+ * at module load from `./prompts/coding.md`. Per ADR-005. Operators override
+ * via `mirepoix --system-prompt-file=PATH`. See prompts.ts (spike lines 48-59).
+ */
+export { DEFAULT_SYSTEM_PROMPT } from "./prompts";

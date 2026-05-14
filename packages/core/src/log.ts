@@ -10,16 +10,33 @@
 // so tsc rejects this file if a new event arm lands in `events.ts` without
 // being added here (NQ-2).
 //
-// Known gap (NQ-13): `JSON.stringify(new Error(...))` yields `{}`, so the
-// `error` payload of `bus:error`, `provider:error`, and `tool:error` lines
-// round-trips as an empty object. A future observability pass installs a
-// JSON replacer that serializes Error instances as { name, message, stack }.
+// NQ-13 closed in sub-phase D: `errorAwareReplacer` is applied to every
+// `JSON.stringify` call so `Error` payloads round-trip as
+// `{ name, message, stack, ...ownEnumerableProps }` instead of `{}`.
 
 import { appendFileSync } from "node:fs";
 
 import type { Bus } from "./bus";
 import type { Disposer } from "./bus";
 import { type EventTag, type MirepoixEvent, schemaVersion } from "./events";
+
+/**
+ * JSON.stringify replacer that serializes `Error` instances faithfully.
+ * Closes NQ-13 from sub-phase C: error-bearing payloads (`bus:error`,
+ * `provider:error`, `tool:error`) now round-trip with `name`, `message`,
+ * `stack`, and any own enumerable props instead of the default `{}`.
+ */
+function errorAwareReplacer(_key: string, value: unknown): unknown {
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+      ...(value as unknown as Record<string, unknown>),
+    };
+  }
+  return value;
+}
 
 const ALL_TAGS = [
   "session:start",
@@ -45,7 +62,9 @@ const _exhaustive: _AllTagsCovered = true;
 void _exhaustive;
 
 function appendLine(filePath: string, obj: Record<string, unknown>): void {
-  appendFileSync(filePath, `${JSON.stringify(obj)}\n`, { encoding: "utf-8" });
+  appendFileSync(filePath, `${JSON.stringify(obj, errorAwareReplacer)}\n`, {
+    encoding: "utf-8",
+  });
 }
 
 export function createSessionLogger(bus: Bus<MirepoixEvent>, filePath: string): Disposer {

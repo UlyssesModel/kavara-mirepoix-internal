@@ -33,6 +33,13 @@ export type MirepoixEvent =
       payload: {
         id: string;
         systemPrompt: string;
+        /**
+         * Provenance for the system prompt. `null` when the default
+         * in-package prompt (`@mirepoix/coding/src/prompts/coding.md`) was
+         * loaded; absolute path string when the operator supplied
+         * `--system-prompt-file=PATH`. Sub-phase D / FR-005 / OQ-4.
+         */
+        systemPromptFile: string | null;
         model: string;
         url: string;
         workingDir: string;
