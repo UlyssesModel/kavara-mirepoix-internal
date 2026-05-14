@@ -10,7 +10,7 @@
 # Field names are camelCase (OQ-1 / NQ-D-1). The forbidden snake_case tokens
 # are listed in `FORBIDDEN_SNAKE` below and would indicate a regression.
 
-set -eu
+set -euo pipefail
 
 LOG="${1:?usage: smoke-accept.sh <jsonl-path>}"
 
@@ -107,5 +107,17 @@ if grep -E "\"($FORBIDDEN_SNAKE)\"" "$LOG" >/dev/null; then
   fail "snake_case payload keys found (regression vs OQ-1 / NQ-D-1): $HIT"
 fi
 
-echo "SMOKE PASS"
+# 10. At least one bash invocation containing "cargo" (D.1 criterion 2).
+BASH_CARGO=$(jq -r 'select(.event=="tool:start" and .payload.name=="bash") | .payload.args.command // ""' "$LOG" | grep -c 'cargo' || true)
+[ "$BASH_CARGO" -ge 1 ] || fail "no bash invocation containing 'cargo' (D.1 criterion 2)"
+
+# 11. At least one write to a Cargo.toml file (D.1 criterion 2).
+WRITE_CARGO_TOML=$(jq -r 'select(.event=="tool:start" and .payload.name=="write") | .payload.args.path // ""' "$LOG" | grep -c 'Cargo.toml' || true)
+[ "$WRITE_CARGO_TOML" -ge 1 ] || fail "no write to a Cargo.toml file (D.1 criterion 2)"
+
+# 12. At least one write to a .rs file (D.1 criterion 2).
+WRITE_RS=$(jq -r 'select(.event=="tool:start" and .payload.name=="write") | .payload.args.path // ""' "$LOG" | grep -cE '\.rs$' || true)
+[ "$WRITE_RS" -ge 1 ] || fail "no write to a .rs file (D.1 criterion 2)"
+
+echo "smoke acceptance: PASS"
 exit 0
