@@ -9,8 +9,10 @@
 // caller — `@mirepoix/core` does NOT import `@mirepoix/coding`. This is
 // the load-bearing edge for ADR-001's package boundaries (NFR-005).
 //
-// The current working directory is read EXACTLY ONCE, inside the
-// `session:start` payload (NQ-7). The loop never mutates process state.
+// The working directory and system-prompt-file provenance are required
+// fields on `RunOptions` (NQ-7 closed in sub-phase D; OQ-4 / FR-005 adds
+// the provenance). `core` reads no boundary state; the CLI passes both
+// through explicitly.
 
 import {
   type AssistantMessage,
@@ -42,6 +44,18 @@ export interface RunOptions {
   maxTurns?: number;
   /** Test seam (NQ-8). The CLI in sub-phase D leaves this unset. */
   provider?: ProviderFn;
+  /**
+   * Working directory the caller intends the run to observe. Required
+   * (NQ-7 closed in sub-phase D / FR-003). The CLI passes its
+   * post-chdir working directory; `core` reads no boundary state.
+   */
+  workingDir: string;
+  /**
+   * System-prompt provenance for the `session:start` payload (FR-005 / OQ-4).
+   * `null` when the default in-package prompt was loaded; absolute path
+   * string when the operator supplied `--system-prompt-file=PATH`.
+   */
+  systemPromptFile: string | null;
 }
 
 const TOOL_RESULT_PREVIEW_CHARS = 200;
@@ -55,10 +69,10 @@ export async function run(options: RunOptions): Promise<void> {
   bus.emit("session:start", {
     id: session.id,
     systemPrompt: session.systemPrompt,
+    systemPromptFile: options.systemPromptFile,
     model: providerConfig.model,
     url: providerConfig.url,
-    // NQ-7: only `process.*` read inside core. Observes, does not mutate.
-    workingDir: process.cwd(),
+    workingDir: options.workingDir,
   });
 
   const userMessage = { role: "user", content: userPrompt };

@@ -24,6 +24,8 @@ async function oneShot(): Promise<void> {
     providerConfig: { url: "http://stub", model: "stub" },
     tools: [],
     executeTool: async () => "",
+    workingDir: "/tmp",
+    systemPromptFile: null,
     provider: async (): Promise<AssistantMessage> => ({
       role: "assistant",
       content: "hello back",
@@ -67,6 +69,8 @@ async function toolRoundTrip(): Promise<void> {
     providerConfig: { url: "http://stub", model: "stub" },
     tools: [],
     executeTool: async (name, args) => `tool ${name} ran with ${JSON.stringify(args)}`,
+    workingDir: "/tmp",
+    systemPromptFile: null,
     provider: async (): Promise<AssistantMessage> => {
       if (call++ === 0) {
         return {
@@ -124,6 +128,8 @@ async function toolThrowContinues(): Promise<void> {
     executeTool: async () => {
       throw new Error("kaboom");
     },
+    workingDir: "/tmp",
+    systemPromptFile: null,
     provider: async (): Promise<AssistantMessage> => {
       if (call++ === 0) {
         return {
@@ -170,6 +176,8 @@ async function providerErrorRethrows(): Promise<void> {
       providerConfig: { url: "http://stub", model: "stub" },
       tools: [],
       executeTool: async () => "",
+      workingDir: "/tmp",
+      systemPromptFile: null,
       provider: async () => {
         throw new Error("provider down");
       },
@@ -199,6 +207,8 @@ async function maxTurns(): Promise<void> {
     providerConfig: { url: "http://stub", model: "stub" },
     tools: [],
     executeTool: async () => "result",
+    workingDir: "/tmp",
+    systemPromptFile: null,
     maxTurns: 2,
     provider: async (): Promise<AssistantMessage> => ({
       role: "assistant",

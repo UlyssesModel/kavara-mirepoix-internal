@@ -45,6 +45,21 @@ passed verbatim to `callProvider` from `@mirepoix/ai`. The definitions are:
 
 ---
 
+### `DEFAULT_SYSTEM_PROMPT`
+
+```ts
+export const DEFAULT_SYSTEM_PROMPT: string;
+```
+
+The Mirepoix coding-agent default system prompt, per ADR-005. Loaded once at
+module load from `src/prompts/coding.md` via `readFileSync`. Operators override
+via `mirepoix --system-prompt-file=PATH`; when no flag is supplied the CLI uses
+this constant and records `session:start.payload.systemPromptFile = null` in the
+JSONL log (sub-phase D / OQ-4 / FR-005). The `.md` file is a static asset; no
+filesystem path crosses the package boundary.
+
+---
+
 ### `executeTool(name, args) → Promise<string>`
 
 ```ts
@@ -123,6 +138,8 @@ Extracted from the Phase Zero spike at `phase-zero-spike/mirepoix-spike.ts`:
 | `src/tools.ts` | 101-160 |
 | `src/bash.ts` | 162-173 |
 | `src/execute.ts` | 240-278 (with `log()` calls dropped) |
+| `src/prompts/coding.md` | 48-59 (the inline `DEFAULT_SYSTEM_PROMPT` string; D extracted to disk) |
+| `src/prompts.ts` | n/a (D-only loader; `readFileSync` of `prompts/coding.md`) |
 
 The spike remains the working harness through sub-phase D and must not be
 modified.

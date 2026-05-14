@@ -18,6 +18,9 @@ const dispose = createSessionLogger(bus, path);
 bus.emit("session:start", {
   id: "x",
   systemPrompt: "p",
+  // Sub-phase D / FR-005 / OQ-4: provenance field. `null` denotes the
+  // default in-package prompt path was used (matches CLI default behavior).
+  systemPromptFile: null,
   model: "m",
   url: "http://stub",
   workingDir: "/tmp",

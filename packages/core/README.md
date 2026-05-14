@@ -64,8 +64,15 @@ interface RunOptions {
   executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
   maxTurns?: number;                        // default 30
   provider?: ProviderFn;                   // test seam; defaults to callProvider from @mirepoix/ai
+  workingDir: string;                       // required; CLI-supplied (NQ-7 closed in sub-phase D)
+  systemPromptFile: string | null;          // required; provenance for session:start (FR-005 / OQ-4)
 }
 ```
+
+`workingDir` and `systemPromptFile` are **required** as of sub-phase D. The CLI
+threads its post-chdir working directory and the operator-supplied prompt path
+(or `null` when the default in-package prompt is used) through every `run`
+call. `core` reads no boundary state.
 
 ### `createSessionLogger`
 
@@ -91,7 +98,7 @@ log file is the header (tag `session:log-init`), which is **not** a member of
 | Tag                    | Payload fields                                                            | Notes                                                              |
 | ---------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `session:log-init`     | `{}` (synthetic header)                                                   | Written once by `createSessionLogger`; not in union.               |
-| `session:start`        | `{ id, systemPrompt, model, url, workingDir }`                            | Emitted once at `run` entry.                                       |
+| `session:start`        | `{ id, systemPrompt, systemPromptFile, model, url, workingDir }`          | Emitted once at `run` entry. `systemPromptFile` added in sub-phase D / FR-005 / OQ-4. |
 | `session:end`          | `{ reason: "model_done" \| "max_turns", turns }`                          | Emitted exactly once per `run` call.                               |
 | `session:compact`      | `{ before, after, strategy }`                                             | Forward-compat; not emitted by `run` in sub-phase C.               |
 | `message:user`         | `{ content }`                                                             | Full user message pushed onto the tape.                            |
@@ -108,10 +115,11 @@ log file is the header (tag `session:log-init`), which is **not** a member of
 Payload keys are camelCase throughout (`messagesCount`, `resultPreview`,
 `workingDir`) — a deliberate divergence from the spike's snake_case (NQ-4).
 
-Known gap (NQ-13): `JSON.stringify(new Error(...))` yields `{}`, so the `error`
-field in `bus:error`, `provider:error`, and `tool:error` JSONL lines round-trips
-as an empty object. A future observability pass installs an `Error` replacer that
-serializes `{ name, message, stack }`.
+NQ-13 closed in sub-phase D: `log.ts` installs an `errorAwareReplacer` and
+applies it to every `JSON.stringify` call. `bus:error`, `provider:error`, and
+`tool:error` JSONL lines now round-trip with `{ name, message, stack,
+...ownEnumerableProps }`. Stack traces may contain absolute paths; we accept
+this trade-off — the session log is local-host and operator-controlled.
 
 ## Layering
 

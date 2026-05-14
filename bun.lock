@@ -18,10 +18,9 @@
       "name": "@mirepoix/cli",
       "version": "0.0.1",
       "bin": {
-        "mirepoix": "src/index.ts",
+        "mirepoix": "./src/index.ts",
       },
       "dependencies": {
-        "@mirepoix/ai": "workspace:*",
         "@mirepoix/coding": "workspace:*",
         "@mirepoix/core": "workspace:*",
       },
