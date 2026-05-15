@@ -312,3 +312,27 @@ After the work, all of the following must hold:
 - `IMPLEMENTATION-PLAN.md` — Phase One scope including this work.
 - `.on-loop/sessions/20260510_002707_sub-phase-b/agent-notes/coding.md`
   — TODO notes on `tool:*` event re-introduction.
+
+## Deliverables
+
+Files this sub-phase committed to the repository tree (backfilled retroactively
+per `specs/harness-deliverable-tracking.md`; every path below is tracked on
+`main` as of the harness-deliverable-tracking PR):
+
+- `packages/core/src/bus.ts`
+- `packages/core/src/events.ts`
+- `packages/core/src/index.ts`
+- `packages/core/src/log.ts`
+- `packages/core/src/loop.ts`
+- `packages/core/src/session.ts`
+- `packages/core/type-smoke/bus-error.ts`
+- `packages/core/type-smoke/bus-slow.ts`
+- `packages/core/type-smoke/log-roundtrip.ts`
+- `packages/core/type-smoke/loop-end-to-end.ts`
+- `packages/core/type-smoke/surface.ts`
+- `packages/core/type-smoke/unknown-tag.ts`
+- `packages/core/type-smoke/tsconfig-negative.json`
+- `packages/core/package.json`
+- `packages/core/README.md`
+- `.github/workflows/ci.yml`
+- `bun.lock`
