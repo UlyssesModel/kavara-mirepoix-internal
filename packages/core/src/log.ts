@@ -52,6 +52,13 @@ const ALL_TAGS = [
   "tool:error",
   "bus:error",
   "bus:slow-handler",
+  "codex:dispatch",
+  "codex:request",
+  "codex:response",
+  "codex:rescue-end",
+  "codex:rescue-start",
+  "codex:unavailable",
+  "codex:verdict",
 ] as const satisfies ReadonlyArray<EventTag>;
 
 // Type-level exhaustiveness check: if MirepoixEvent gains a new tag that is
