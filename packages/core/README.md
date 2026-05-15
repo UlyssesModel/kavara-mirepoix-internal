@@ -90,7 +90,7 @@ sub-phase D) is responsible for `mkdirSync({ recursive: true })`.
 
 ## Event vocabulary
 
-All 13 kernel events plus 1 synthetic logger header. Every JSONL line is
+All 20 kernel events plus 1 synthetic logger header. Every JSONL line is
 `{ ts: <ISO-8601>, event: <tag>, payload: <object> }`. The first line of every
 log file is the header (tag `session:log-init`), which is **not** a member of
 `MirepoixEvent` and need not be handled by consumers.
@@ -111,6 +111,13 @@ log file is the header (tag `session:log-init`), which is **not** a member of
 | `tool:error`           | `{ name, callId, error }`                                                 | Only if `executeTool` throws; loop continues (NQ-9).               |
 | `bus:error`            | `{ tag, error, handler? }`                                                | Handler containment surface (ADR-004).                             |
 | `bus:slow-handler`     | `{ tag, durationMs, handler? }`                                           | Default threshold: 50 ms.                                          |
+| `codex:dispatch`       | `{ dispatchId, phase, reason, command? }`                                 | Orchestrator dispatches a Codex teammate operation (ADR-013); `command` set on operator-direct (`phase: null`). |
+| `codex:request`        | `{ dispatchId, model, prompt }`                                           | Outbound Codex API call; full prompt body per ADR-005 (no preview-truncation). |
+| `codex:response`       | `{ dispatchId, response, durationMs, tokensIn?, tokensOut?, costUsd?, cacheHit? }` | Codex response back to harness; full body + optional usage telemetry. |
+| `codex:verdict`        | `{ dispatchId, sourceVerdict, gateVerdict, body }`                        | Codex review verdict; `sourceVerdict` raw (approve / needs-attention), `gateVerdict` normalized (approve / block). |
+| `codex:rescue-start`   | `{ dispatchId, prompt, filesAllowlist }`                                  | CODE retry-exhaust rescue dispatched; full prompt captured.        |
+| `codex:rescue-end`     | `{ dispatchId, outcome, touchedFiles, durationMs, error? }`               | Rescue returns; `outcome` ∈ {applied, reverted-out-of-scope, reverted-gate-failed, rescue-error, timeout}; NQ-13 Error. |
+| `codex:unavailable`    | `{ reason, details?, error?, retryAfterMs?, attempt?, maxAttempts? }`     | Pre-dispatch skip (RUNBOOK §4/§6); retry shape mirrors HTTP 429.   |
 
 Payload keys are camelCase throughout (`messagesCount`, `resultPreview`,
 `workingDir`) — a deliberate divergence from the spike's snake_case (NQ-4).
@@ -157,11 +164,12 @@ Extracted from `phase-zero-spike/mirepoix-spike.ts` (byte-frozen until sub-phase
 ## Stability
 
 Sub-phase C surface. The six value exports (`Bus`, `Session`, `run`,
-`createSessionLogger`, `schemaVersion`, `PACKAGE_NAME`) and the 13-arm
-`MirepoixEvent` union are stable for sub-phase D. The surface is expected to
-grow when `@mirepoix/cli` lands (sub-phase D adds env wiring and terminal
-output) and again when a compaction sub-phase emits `session:compact` and
-populates its payload.
+`createSessionLogger`, `schemaVersion`, `PACKAGE_NAME`) and the
+`MirepoixEvent` union are stable. The union grew from 13 arms (sub-phase C)
+to 20 arms (sub-phase codex-events: seven `codex:*` arms per ADR-013 Known
+gaps §1; types + logger surface only, no dispatching code). The surface is
+expected to grow again when a compaction sub-phase emits `session:compact`
+and populates its payload, and when codex-dispatching code lands.
 
 ## Local development
 
@@ -177,6 +185,7 @@ bun packages/core/type-smoke/bus-error.ts                # error-containment smo
 bun packages/core/type-smoke/bus-slow.ts                 # slow-handler smoke
 bun packages/core/type-smoke/log-roundtrip.ts            # JSONL round-trip smoke
 bun packages/core/type-smoke/loop-end-to-end.ts          # agent loop smoke
+bun packages/core/type-smoke/codex-events.ts             # codex:* 7-arm round-trip smoke
 ! bun x tsc --noEmit -p packages/core/type-smoke/tsconfig-negative.json  # must fail
 ```
 
