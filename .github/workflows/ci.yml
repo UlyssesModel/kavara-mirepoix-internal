@@ -56,3 +56,21 @@ jobs:
       - name: Smoke test — @mirepoix/cli surface
         run: |
           bun -e 'import * as cli from "./packages/cli/src/index.ts"; const keys = Object.keys(cli).sort(); const expected = ["PACKAGE_NAME","main"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("cli surface mismatch:", keys); process.exit(1); } console.log("cli surface OK");'
+
+      - name: Deliverable-tracking check
+        run: |
+          # Pick the latest spec that has a `## Deliverables` section. Filters out
+          # pre-convention specs (sub-phase-b, b1) automatically; bootstrap-excludes
+          # the spec that introduced the check + non-sub-phase schema docs.
+          # Lexicographic sort is deterministic across fresh CI checkouts (ls -t is not,
+          # because mtimes don't survive checkout — NQ-2 in the harness spec).
+          LATEST_SPEC=$(grep -l '^## Deliverables' specs/sub-phase-*.md specs/harness-*.md 2>/dev/null \
+            | grep -v 'sub-phase-d1-spike-retirement\|smoke-test-acceptance\|harness-deliverable-tracking' \
+            | sort -r \
+            | head -1)
+          if [ -n "$LATEST_SPEC" ]; then
+            echo "Checking deliverables in: $LATEST_SPEC"
+            bash scripts/check-deliverables.sh "$LATEST_SPEC"
+          else
+            echo "No active spec to check"
+          fi

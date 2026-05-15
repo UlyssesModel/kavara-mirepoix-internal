@@ -33,6 +33,7 @@ These ADRs are load-bearing. Do not contradict them without a superseding ADR:
 - **Error serialization in JSONL must be faithful** (NQ-13). `Error` instances must be replaced with `{ name, message, stack }`, not `{}` (the default `JSON.stringify` returns `{}` for non-enumerable Error properties — install an Error-aware replacer in `packages/core/src/log.ts`).
 - **System prompts live in `packages/<pkg>/src/prompts/*.md`** (sub-phase D commitment), not hardcoded in TypeScript.
 - **CI workflows** must SHA-pin GitHub Actions and declare `permissions: contents: read` explicitly.
+- **Spec `## Deliverables` section** required. Every spec at `specs/<name>.md` MUST include a `## Deliverables` H2 section listing repo-relative paths it commits to producing, one per markdown bullet of the form `` - `path/to/file` ``. CI runs [`scripts/check-deliverables.sh`](scripts/check-deliverables.sh) against the latest spec on every PR; an undeclared or unstaged path is a hard fail. For decision-only specs, the section reads `None.` with an explanatory sentence. Caveat: trailing-slash directory entries (e.g., `` `packages/cli/src/` ``) pass the check if any file under the prefix is tracked — list individual files for stricter coverage. See [`specs/harness-deliverable-tracking.md`](specs/harness-deliverable-tracking.md).
 
 ## Multi-agent face-off (Codex as teammate)
 
@@ -82,6 +83,7 @@ Phase One sub-phases shipped: A, B, B.1, C, D, D.1. Queued: E (self-modification
 - Auto-apply Codex review findings — the `codex-result-handling` skill explicitly forbids this. Always present verbatim and ask which findings (if any) the operator wants addressed.
 - Dispatch Codex during SPEC or PLAN phases — architect/orchestrator territory. Codex enters at CODE (retry-exhaust) and REVIEW (default-on) only.
 - Enable Codex on Mirepoix-secure without a superseding ADR weakening ADR-010 — the deny-all-egress posture of the locked host is load-bearing. Runbook tweaks, environment variables, and operator overrides cannot re-enable Codex on Mirepoix-secure; only a new ADR that explicitly authorizes the change to ADR-010's blast radius can.
+- Land a sub-phase spec without a `## Deliverables` section — CI will reject the PR. See [`specs/harness-deliverable-tracking.md`](specs/harness-deliverable-tracking.md).
 
 ## Quick references
 
