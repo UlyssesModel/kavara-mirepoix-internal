@@ -35,6 +35,19 @@ These ADRs are load-bearing. Do not contradict them without a superseding ADR:
 - **CI workflows** must SHA-pin GitHub Actions and declare `permissions: contents: read` explicitly.
 - **Spec `## Deliverables` section** required. Every spec at `specs/<name>.md` MUST include a `## Deliverables` H2 section listing repo-relative paths it commits to producing, one per markdown bullet of the form `` - `path/to/file` ``. CI runs [`scripts/check-deliverables.sh`](scripts/check-deliverables.sh) against the latest spec on every PR; an undeclared or unstaged path is a hard fail. For decision-only specs, the section reads `None.` with an explanatory sentence. Caveat: trailing-slash directory entries (e.g., `` `packages/cli/src/` ``) pass the check if any file under the prefix is tracked — list individual files for stricter coverage. See [`specs/harness-deliverable-tracking.md`](specs/harness-deliverable-tracking.md).
 
+## Multi-agent face-off (Codex as teammate)
+
+Per [ADR-013](adrs/ADR-013-codex-as-teammate.md), the on-loop pipeline runs Claude and Codex as two teammates **on Mirepoix-build only**. The venue policy is load-bearing — see [ADR-012](adrs/ADR-012-two-venue-deployment-model.md) for venue definitions and ADR-013 commitment 4 for the split:
+
+- **Venue policy (Mirepoix-build vs Mirepoix-secure)**: the Codex teammate is enabled by default on **Mirepoix-build** (`kavara-builder` and operator-workstation runs against non-confidential specs). It is **disabled by default on Mirepoix-secure** (`scotty-gpu` deny-all-egress posture per ADR-010 precludes Codex's auth path). Re-enabling Codex on Mirepoix-secure requires a **superseding ADR that explicitly weakens ADR-010** — not a runbook tweak, env var, or operator override.
+- **REVIEW phase (default-on, Mirepoix-build)**: when `/on-loop` reaches REVIEW, the orchestrator dispatches BOTH the Claude reviewer agent AND `/codex:adversarial-review` on the same branch, in parallel. Both verdicts are presented verbatim; either REQUEST_CHANGES (Claude) or needs-attention (Codex) blocks merge. The orchestrator normalizes each reviewer's source vocabulary to a binary block/approve decision; see RUNBOOK §4 for the normalization table and deadlock adjudication rules.
+- **CODE phase (retry-exhaust fallback, Mirepoix-build)**: after 3 retries against the Claude coding agent (TEST or SECURITY blocking), the orchestrator dispatches `codex:codex-rescue` with the accumulated feedback. Rescue containment: the orchestrator verifies the rescue's touched files are within the spec's diff allowlist, re-runs FULL TEST + SECURITY, and dispatches a fresh REVIEW face-off on the rescue output. Rescue does NOT skip any gate; see RUNBOOK §2 for the containment sequence.
+- **Architect output style**: per the `gpt-5-4-prompting` skill that ships with `codex-plugin-cc`, the architect's notes adopt XML-block sections (`<task>`, `<structured_output_contract>`, `<default_follow_through_policy>`, `<verification_loop>`, `<grounding_rules>`, `<action_safety>`) instead of plain markdown headers for the load-bearing structure. This tightens the contract with downstream agents and is required for any prompt that's eventually dispatched to Codex.
+- **Codex unavailable (Mirepoix-build)**: if `/codex:status` reports Codex not installed, not authenticated, or version-incompatible, the orchestrator falls back to Claude-only review/code and logs a `[codex-unavailable]` warning in the session's `changes.log`. The PR is not blocked on tooling state. On Mirepoix-secure this is the steady state per venue policy (above); the orchestrator emits `[codex-unavailable] mirepoix-secure-default` at REVIEW dispatch without probing `/codex:status`.
+- **Enforcement is convention-only in v1**: the on-loop plugin source is unchanged in this PR (cross-repo). CLAUDE.md is the load-bearing mechanism that propagates the default-on convention; a future cross-repo PR to `openai/on-loop` will gate REVIEW dispatch on the convention. Until that lands, default-on is honored by reading CLAUDE.md, not enforced by code.
+
+Operator-direct Codex commands (outside the on-loop pipeline) remain available **on Mirepoix-build**: see [`docs/CODEX-TEAMMATE-RUNBOOK.md`](docs/CODEX-TEAMMATE-RUNBOOK.md).
+
 ## Deployment venues
 
 Mirepoix has **two standard postures**, per [ADR-012](adrs/ADR-012-two-venue-deployment-model.md):
@@ -67,6 +80,9 @@ Phase One sub-phases shipped: A, B, B.1, C, D, D.1. Queued: E (self-modification
 - CI workflows that reach out to network (must be deterministic against the local cache)
 - Renaming `bun.lock` back to `bun.lockb` (Bun's text format is current; the spec for B.1 had a typo on this point)
 - Inventing helper functions / files that don't trace back to existing source (sub-phase B caveat — the model has been known to hallucinate `./utils` when uncertain)
+- Auto-apply Codex review findings — the `codex-result-handling` skill explicitly forbids this. Always present verbatim and ask which findings (if any) the operator wants addressed.
+- Dispatch Codex during SPEC or PLAN phases — architect/orchestrator territory. Codex enters at CODE (retry-exhaust) and REVIEW (default-on) only.
+- Enable Codex on Mirepoix-secure without a superseding ADR weakening ADR-010 — the deny-all-egress posture of the locked host is load-bearing. Runbook tweaks, environment variables, and operator overrides cannot re-enable Codex on Mirepoix-secure; only a new ADR that explicitly authorizes the change to ADR-010's blast radius can.
 - Land a sub-phase spec without a `## Deliverables` section — CI will reject the PR. See [`specs/harness-deliverable-tracking.md`](specs/harness-deliverable-tracking.md).
 
 ## Quick references
