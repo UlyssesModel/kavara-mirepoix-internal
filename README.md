@@ -12,8 +12,7 @@ Per [ADR-007](adrs/ADR-007-layered-distribution-and-license-tagging.md), Kavara-
 - Architecture Decision Records (ADRs 001–010)
 - The Mirepoix-secure deployment runbook at [`docs/MIREPOIX-SECURE-RUNBOOK.md`](docs/MIREPOIX-SECURE-RUNBOOK.md)
 - Audit baselines for the locked-host deployment ([`docs/SCOTTY-GPU-PREMIGRATION-AUDIT.md`](docs/SCOTTY-GPU-PREMIGRATION-AUDIT.md), [`docs/INFRASTRUCTURE-AUDIT.md`](docs/INFRASTRUCTURE-AUDIT.md))
-- Per-sub-phase design docs for ongoing Phase One work under [`specs/`](specs/)
-- The Phase Zero spike (`phase-zero-spike/`), preserved as a working harness until the new CLI is proven via the smoke acceptance gate
+- Per-sub-phase design docs for Phase One under [`specs/`](specs/)
 
 The public surface lives at [`UlyssesModel/kavara-mirepoix`](https://github.com/UlyssesModel/kavara-mirepoix) and contains only `public`-tagged content.
 
@@ -21,8 +20,8 @@ The public surface lives at [`UlyssesModel/kavara-mirepoix`](https://github.com/
 
 | Phase | State |
 |---|---|
-| **Phase Zero** — single-file spike, validates the architecture end-to-end on scotty-gpu under deny-all-egress | ✅ Complete |
-| **Phase One** — split into `@mirepoix/{ai,core,coding,cli}`, retire the spike | 🚧 In progress |
+| **Phase Zero** — single-file spike, validated the architecture end-to-end on scotty-gpu under deny-all-egress | ✅ Complete (retired in D.1) |
+| **Phase One** — split into `@mirepoix/{ai,core,coding,cli}`, retire the spike | ✅ Complete |
 
 Phase One sub-phase tracker (per [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)):
 
@@ -32,8 +31,8 @@ Phase One sub-phase tracker (per [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.
 | B | Extract provider + base tools from spike → `@mirepoix/{ai,coding}` | ✅ Merged |
 | B.1 | Types (`@types/node`), Biome, GitHub Actions CI workflow | ✅ Merged |
 | C | Event bus + Session + JSONL log + agent loop → `@mirepoix/core`. First cross-package import (`core → ai`). | ✅ Merged |
-| D | Wire `@mirepoix/cli`, carry NQ-13 (Error-aware JSONL) + NQ-7 (`RunOptions.workingDir`) forward, system prompt extraction, CI hardening (SHA-pin Actions, `permissions: contents: read`) | 🚧 In progress |
-| D.1 | Retire `phase-zero-spike/` (gated on JSONL smoke pass per [`specs/smoke-test-acceptance.md`](specs/smoke-test-acceptance.md)) | ⏳ Queued |
+| D | Wire `@mirepoix/cli`, carry NQ-13 (Error-aware JSONL) + NQ-7 (`RunOptions.workingDir`) forward, system prompt extraction, CI hardening (SHA-pin Actions, `permissions: contents: read`) | ✅ Merged |
+| D.1 | Retire `phase-zero-spike/` (gated on JSONL smoke pass per [`specs/smoke-test-acceptance.md`](specs/smoke-test-acceptance.md)) | ✅ Merged |
 
 ## Packages
 
