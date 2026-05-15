@@ -33,6 +33,7 @@ These ADRs are load-bearing. Do not contradict them without a superseding ADR:
 - **Error serialization in JSONL must be faithful** (NQ-13). `Error` instances must be replaced with `{ name, message, stack }`, not `{}` (the default `JSON.stringify` returns `{}` for non-enumerable Error properties — install an Error-aware replacer in `packages/core/src/log.ts`).
 - **System prompts live in `packages/<pkg>/src/prompts/*.md`** (sub-phase D commitment), not hardcoded in TypeScript.
 - **CI workflows** must SHA-pin GitHub Actions and declare `permissions: contents: read` explicitly.
+- **Spec `## Deliverables` section** required. Every spec at `specs/<name>.md` MUST include a `## Deliverables` H2 section listing repo-relative paths it commits to producing, one per markdown bullet of the form `` - `path/to/file` ``. CI runs [`scripts/check-deliverables.sh`](scripts/check-deliverables.sh) against the latest spec on every PR; an undeclared or unstaged path is a hard fail. For decision-only specs, the section reads `None.` with an explanatory sentence. Caveat: trailing-slash directory entries (e.g., `` `packages/cli/src/` ``) pass the check if any file under the prefix is tracked — list individual files for stricter coverage. See [`specs/harness-deliverable-tracking.md`](specs/harness-deliverable-tracking.md).
 
 ## Deployment venues
 
@@ -66,6 +67,7 @@ Phase One sub-phases shipped: A, B, B.1, C, D, D.1. Queued: E (self-modification
 - CI workflows that reach out to network (must be deterministic against the local cache)
 - Renaming `bun.lock` back to `bun.lockb` (Bun's text format is current; the spec for B.1 had a typo on this point)
 - Inventing helper functions / files that don't trace back to existing source (sub-phase B caveat — the model has been known to hallucinate `./utils` when uncertain)
+- Land a sub-phase spec without a `## Deliverables` section — CI will reject the PR. See [`specs/harness-deliverable-tracking.md`](specs/harness-deliverable-tracking.md).
 
 ## Quick references
 

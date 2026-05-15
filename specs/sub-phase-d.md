@@ -550,3 +550,34 @@ committing the doc to the repo.
   placeholder state.
 - Sub-phase D.1 (forthcoming, separate PR): spike retirement, gated on
   smoke pass.
+
+## Deliverables
+
+Files this sub-phase committed to the repository tree (backfilled retroactively
+per `specs/harness-deliverable-tracking.md`; every path below is tracked on
+`main` as of the harness-deliverable-tracking PR):
+
+- `packages/cli/src/index.ts`
+- `packages/cli/src/main.ts`
+- `packages/cli/src/argv.ts`
+- `packages/cli/src/render.ts`
+- `packages/cli/type-smoke/surface.ts`
+- `packages/cli/type-smoke/main-stub-provider.ts`
+- `packages/cli/type-smoke/run-options-missing-wd.ts`
+- `packages/cli/type-smoke/tsconfig-negative.json`
+- `packages/cli/package.json`
+- `packages/cli/README.md`
+- `packages/coding/src/prompts.ts`
+- `packages/coding/src/prompts/coding.md`
+- `packages/coding/src/index.ts`
+- `packages/coding/README.md`
+- `packages/core/src/events.ts`
+- `packages/core/src/loop.ts`
+- `packages/core/src/log.ts`
+- `packages/core/type-smoke/loop-end-to-end.ts`
+- `packages/core/type-smoke/log-roundtrip.ts`
+- `packages/core/README.md`
+- `specs/smoke-test-acceptance.md`
+- `scripts/smoke-accept.sh`
+- `.github/workflows/ci.yml`
+- `bun.lock`
