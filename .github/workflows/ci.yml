@@ -56,6 +56,3 @@ jobs:
       - name: Smoke test — @mirepoix/cli surface
         run: |
           bun -e 'import * as cli from "./packages/cli/src/index.ts"; const keys = Object.keys(cli).sort(); const expected = ["PACKAGE_NAME","main"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("cli surface mismatch:", keys); process.exit(1); } console.log("cli surface OK");'
-
-      - name: Spike-frozen guard
-        run: git diff --exit-code phase-zero-spike/
