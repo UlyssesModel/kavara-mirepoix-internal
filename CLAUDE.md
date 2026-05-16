@@ -52,6 +52,10 @@ implementation of this sub-phase.
 This convention applies retroactively to all sub-phase specs, including
 `specs/sub-phase-d.md` (resolutions in PR #5).
 
+## NQ-7 concession: workingDir invariant
+
+`packages/core/src/loop.ts` asserts that `options.workingDir === process.cwd()` at session:start and throws with an issue-#14 marker on divergence — a temporary cross-check, not value-derivation, exposing the silent footgun where `@mirepoix/coding` tools bind to `process.cwd()` at spawn-time while `RunOptions.workingDir` is structurally advisory. The negative integration test at `packages/core/type-smoke/loop-workdir-assertion.ts` is wired into CI and proves the assertion fires; the positive smoke at `packages/core/type-smoke/loop-end-to-end.ts` uses `workingDir: process.cwd()` at its five constructor sites so the divergence does not trip. The assertion (and this section, and the negative test, and its CI step) gets removed when [issue #14](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/14) lands the ToolContext plumbing — the first concrete ADR-014 Refactor 2 deliverable.
+
 ## Multi-agent face-off (Codex as teammate)
 
 Per [ADR-013](adrs/ADR-013-codex-as-teammate.md), the on-loop pipeline runs Claude and Codex as two teammates **on Mirepoix-build only**. The venue policy is load-bearing — see [ADR-012](adrs/ADR-012-two-venue-deployment-model.md) for venue definitions and ADR-013 commitment 4 for the split:

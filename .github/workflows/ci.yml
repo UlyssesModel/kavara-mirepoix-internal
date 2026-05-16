@@ -46,6 +46,9 @@ jobs:
         run: |
           bun -e 'import * as core from "./packages/core/src/index.ts"; const keys = Object.keys(core).sort(); const expected = ["Bus","PACKAGE_NAME","Session","createSessionLogger","run","schemaVersion"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("core surface mismatch:", keys); process.exit(1); } console.log("core surface OK");'
 
+      - name: Smoke test — workingDir/cwd divergence asserts (issue #14 transitional)
+        run: bun packages/core/type-smoke/loop-workdir-assertion.ts
+
       - name: Smoke test — rehydration acceptance (FR-003)
         run: |
           bun -e 'import { tryParseToolCallsFromContent } from "./packages/ai/src/rehydrate.ts"; const c = tryParseToolCallsFromContent(`{"name": "write", "arguments": {"path": "/tmp/foo", "content": "bar"}}\n{"name": "read", "arguments": {"path": "/tmp/foo"}}`); if (c.length !== 2 || c[0].name !== "write" || c[1].name !== "read") { console.error("rehydration mismatch:", c); process.exit(1); } console.log("rehydration OK");'
