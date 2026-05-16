@@ -35,6 +35,23 @@ These ADRs are load-bearing. Do not contradict them without a superseding ADR:
 - **CI workflows** must SHA-pin GitHub Actions and declare `permissions: contents: read` explicitly.
 - **Spec `## Deliverables` section** required. Every spec at `specs/<name>.md` MUST include a `## Deliverables` H2 section listing repo-relative paths it commits to producing, one per markdown bullet of the form `` - `path/to/file` ``. CI runs [`scripts/check-deliverables.sh`](scripts/check-deliverables.sh) against the latest spec on every PR; an undeclared or unstaged path is a hard fail. For decision-only specs, the section reads `None.` with an explanatory sentence. Caveat: trailing-slash directory entries (e.g., `` `packages/cli/src/` ``) pass the check if any file under the prefix is tracked — list individual files for stricter coverage. See [`specs/harness-deliverable-tracking.md`](specs/harness-deliverable-tracking.md).
 
+## Spec resolution convention
+
+`specs/*.md` files are *pre-OQ snapshots*, not executable specifications.
+
+When a spec contains OQs (open questions) or NQs (negative questions), the resolutions
+are produced by the on-loop SPEC phase and recorded in two places:
+
+1. The on-loop pipeline's SPEC-phase output artifact (per-run, in the on-loop workspace)
+2. The corresponding PR body (durable, reachable from `git log` via the merge commit)
+
+When reading a spec, treat the disk file as the *prompt*, not the *contract*. The
+contract is the resolved version. To find it: look at the PR that merged the
+implementation of this sub-phase.
+
+This convention applies retroactively to all sub-phase specs, including
+`specs/sub-phase-d.md` (resolutions in PR #5).
+
 ## Multi-agent face-off (Codex as teammate)
 
 Per [ADR-013](adrs/ADR-013-codex-as-teammate.md), the on-loop pipeline runs Claude and Codex as two teammates **on Mirepoix-build only**. The venue policy is load-bearing — see [ADR-012](adrs/ADR-012-two-venue-deployment-model.md) for venue definitions and ADR-013 commitment 4 for the split:
