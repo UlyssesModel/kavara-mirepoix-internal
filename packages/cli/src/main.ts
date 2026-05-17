@@ -4,8 +4,10 @@
 // Stage order (binding):
 //   1. Parse argv (--system-prompt-file, --cwd, positional → userPrompt)
 //   2. Env reads (OLLAMA_URL, MIREPOIX_MODEL, MIREPOIX_SESSION_DIR)
-//   3. Resolve --cwd and `process.chdir` (fail-fast on missing path; OQ-6, NQ-D-6)
-//   4. Load system prompt (file when --system-prompt-file; else DEFAULT_SYSTEM_PROMPT)
+//   3. Load system prompt (file when --system-prompt-file; else DEFAULT_SYSTEM_PROMPT).
+//      Resolved BEFORE --cwd chdir so relative --system-prompt-file paths bind
+//      to the invocation directory, matching phase-zero-spike behavior (issue #16).
+//   4. Resolve --cwd and `process.chdir` (fail-fast on missing path; OQ-6, NQ-D-6)
 //   5. Compute session id + log path; mkdirSync the session dir
 //   6. new Session({ id, systemPrompt })
 //   7. Wire JSONL logger via createSessionLogger
@@ -52,25 +54,10 @@ export async function main(argv?: string[]): Promise<number> {
   const sessionDirEnv =
     process.env.MIREPOIX_SESSION_DIR ?? `${homedir()}/.local/share/mirepoix/sessions`;
 
-  // 3. Resolve --cwd and chdir (NQ-D-5: chdir BEFORE mkdirSync; NQ-D-6:
-  // fail-fast on missing path, no auto-create).
-  let resolvedCwd: string;
-  if (parsed.workingDir !== null) {
-    const target = resolve(parsed.workingDir);
-    try {
-      process.chdir(target);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[mirepoix] error: --cwd path does not exist: ${target} (${message})`);
-      return 1;
-    }
-    resolvedCwd = process.cwd();
-  } else {
-    resolvedCwd = process.cwd();
-  }
-
-  // 4. Load system prompt (file path if supplied, otherwise the in-package
-  // default). Provenance string is recorded verbatim from the flag for the
+  // 3. Load system prompt (file path if supplied, otherwise the in-package
+  // default). Resolved BEFORE --cwd chdir so relative paths bind to the
+  // invocation directory, matching phase-zero-spike behavior (issue #16).
+  // Provenance string is recorded verbatim from the flag for the
   // `session:start.systemPromptFile` field.
   let systemPrompt: string;
   let systemPromptFileForLog: string | null;
@@ -89,6 +76,23 @@ export async function main(argv?: string[]): Promise<number> {
   } else {
     systemPrompt = DEFAULT_SYSTEM_PROMPT;
     systemPromptFileForLog = null;
+  }
+
+  // 4. Resolve --cwd and chdir (NQ-D-5: chdir BEFORE mkdirSync; NQ-D-6:
+  // fail-fast on missing path, no auto-create).
+  let resolvedCwd: string;
+  if (parsed.workingDir !== null) {
+    const target = resolve(parsed.workingDir);
+    try {
+      process.chdir(target);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[mirepoix] error: --cwd path does not exist: ${target} (${message})`);
+      return 1;
+    }
+    resolvedCwd = process.cwd();
+  } else {
+    resolvedCwd = process.cwd();
   }
 
   // 5. Session id + log path; mkdir the session dir (matches spike lines 45, 84).
