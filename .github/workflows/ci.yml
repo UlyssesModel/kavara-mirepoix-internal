@@ -60,6 +60,9 @@ jobs:
         run: |
           bun -e 'import * as cli from "./packages/cli/src/index.ts"; const keys = Object.keys(cli).sort(); const expected = ["PACKAGE_NAME","main"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("cli surface mismatch:", keys); process.exit(1); } console.log("cli surface OK");'
 
+      - name: Smoke test — --system-prompt-file resolves against invocation dir (issue #16)
+        run: bun packages/cli/type-smoke/main-system-prompt-file-resolution.ts
+
       - name: Deliverable-tracking check
         run: |
           # Pick the latest spec that has a `## Deliverables` section. Filters out
