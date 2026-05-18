@@ -25,3 +25,11 @@ export { executeTool } from "./execute";
  * via `mirepoix --system-prompt-file=PATH`. See prompts.ts (spike lines 48-59).
  */
 export { DEFAULT_SYSTEM_PROMPT } from "./prompts";
+
+/**
+ * ToolContext — the aggregate carried into every tool invocation. Per
+ * ADR-014 Refactor 2 / MS-3 and CONTEXT-MAP.md R1 (Issue #14). Type-only
+ * export — no runtime artifact, so the package's runtime-surface key set
+ * (DEFAULT_SYSTEM_PROMPT, PACKAGE_NAME, executeTool, tools) is unchanged.
+ */
+export type { ToolContext } from "./context";

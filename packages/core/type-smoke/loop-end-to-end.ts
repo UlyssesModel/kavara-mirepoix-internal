@@ -23,7 +23,7 @@ async function oneShot(): Promise<void> {
     userPrompt: "hi",
     providerConfig: { url: "http://stub", model: "stub" },
     tools: [],
-    executeTool: async () => "",
+    executeTool: async (_name, _args, _ctx) => "",
     workingDir: process.cwd(),
     systemPromptFile: null,
     provider: async (): Promise<AssistantMessage> => ({
@@ -68,7 +68,7 @@ async function toolRoundTrip(): Promise<void> {
     userPrompt: "do it",
     providerConfig: { url: "http://stub", model: "stub" },
     tools: [],
-    executeTool: async (name, args) => `tool ${name} ran with ${JSON.stringify(args)}`,
+    executeTool: async (name, args, _ctx) => `tool ${name} ran with ${JSON.stringify(args)}`,
     workingDir: process.cwd(),
     systemPromptFile: null,
     provider: async (): Promise<AssistantMessage> => {
@@ -125,7 +125,7 @@ async function toolThrowContinues(): Promise<void> {
     userPrompt: "do it",
     providerConfig: { url: "http://stub", model: "stub" },
     tools: [],
-    executeTool: async () => {
+    executeTool: async (_name, _args, _ctx) => {
       throw new Error("kaboom");
     },
     workingDir: process.cwd(),
@@ -175,7 +175,7 @@ async function providerErrorRethrows(): Promise<void> {
       userPrompt: "fail",
       providerConfig: { url: "http://stub", model: "stub" },
       tools: [],
-      executeTool: async () => "",
+      executeTool: async (_name, _args, _ctx) => "",
       workingDir: process.cwd(),
       systemPromptFile: null,
       provider: async () => {
@@ -206,7 +206,7 @@ async function maxTurns(): Promise<void> {
     userPrompt: "spin",
     providerConfig: { url: "http://stub", model: "stub" },
     tools: [],
-    executeTool: async () => "result",
+    executeTool: async (_name, _args, _ctx) => "result",
     workingDir: process.cwd(),
     systemPromptFile: null,
     maxTurns: 2,

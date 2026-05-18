@@ -14,11 +14,14 @@
 // the provenance). `core` reads no boundary state for value-derivation;
 // the CLI passes both through explicitly.
 //
-// One transitional exception: `run()` reads `process.cwd()` ONCE at
-// session:start to assert `options.workingDir === process.cwd()` —
-// cross-check only, not value-derivation. See issue #14
-// (ADR-014 Refactor 2: ToolContext plumbing). Removed when tools no
-// longer bind to `process.cwd()` at spawn-time.
+// Per ADR-014 Refactor 2 / MS-3 (Issue #14), `run()` constructs a
+// `toolContext = { workingDir: options.workingDir }` once before the
+// tool-calls loop and passes it as the third argument to
+// `options.executeTool(...)` — eliminating the structural binding to
+// the parent process's working directory that tools previously relied on.
+// Core uses structural typing on the parameter (`ctx: { workingDir: string }`)
+// rather than importing `ToolContext` from `@mirepoix/coding`, preserving
+// the load-bearing `core ↛ coding` dependency direction (NQ-C).
 
 import {
   type AssistantMessage,
@@ -44,8 +47,20 @@ export interface RunOptions {
   providerConfig: ProviderConfig;
   /** Opaque to core; passed through to the provider call. */
   tools: unknown[];
-  /** Caller-supplied tool dispatcher. Contract: returns the result string. */
-  executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
+  /**
+   * Caller-supplied tool dispatcher. Contract: returns the result string.
+   *
+   * The third `ctx` parameter carries the `workingDir` aggregate per ADR-014
+   * Refactor 2 / MS-3 (Issue #14). Structurally typed here so `core` does not
+   * import `ToolContext` from `@mirepoix/coding` (NQ-C); a
+   * `(name, args, ctx: ToolContext) => Promise<string>` value remains
+   * assignable by TypeScript structural compatibility.
+   */
+  executeTool: (
+    name: string,
+    args: Record<string, unknown>,
+    ctx: { workingDir: string },
+  ) => Promise<string>;
   /** Default 30 (matches spike). */
   maxTurns?: number;
   /** Test seam (NQ-8). The CLI in sub-phase D leaves this unset. */
@@ -67,27 +82,6 @@ export interface RunOptions {
 const TOOL_RESULT_PREVIEW_CHARS = 200;
 
 export async function run(options: RunOptions): Promise<void> {
-  // Transitional NQ-7 concession (ADR-014 issue #14, ToolContext plumbing).
-  //
-  // Tools in `@mirepoix/coding` operate against `process.cwd()` (bash spawns
-  // without an explicit cwd; read/write/edit resolve relative paths through
-  // process state). The CLI keeps `options.workingDir` and `process.cwd()`
-  // coincident by calling `process.chdir` before invoking `run()`. Any other
-  // caller (an extension host, MCP frontend, programmatic embedding) that
-  // forgets the chdir would silently log `workingDir=X` while tools operate
-  // against `cwd=Y`.
-  //
-  // This assertion reads `process.cwd()` for cross-check ONLY, not for
-  // value-derivation — the load-bearing field remains `options.workingDir`.
-  // It gets removed when issue #14 lands `ToolContext` plumbing through
-  // `executeTool` (tools no longer depend on `process.cwd()`).
-  if (options.workingDir !== process.cwd()) {
-    throw new Error(
-      `workingDir/process.cwd() divergence — see ADR-014 issue #14. ` +
-        `options.workingDir=${options.workingDir}; process.cwd()=${process.cwd()}`,
-    );
-  }
-
   const { session, providerConfig, tools, userPrompt } = options;
   const provider: ProviderFn = options.provider ?? callProvider;
   const maxTurns = options.maxTurns ?? DEFAULT_MAX_TURNS;
@@ -105,6 +99,11 @@ export async function run(options: RunOptions): Promise<void> {
   const userMessage = { role: "user", content: userPrompt };
   messages.push(userMessage);
   bus.emit("message:user", { content: userPrompt });
+
+  // ADR-014 Refactor 2 / MS-3 (Issue #14): construct the ToolContext once
+  // from options.workingDir and thread it into every executeTool call.
+  // Structural typing keeps `core ↛ coding` intact (NQ-C).
+  const toolContext = { workingDir: options.workingDir };
 
   for (let turn = 0; turn < maxTurns; turn++) {
     session.turn = turn;
@@ -146,7 +145,7 @@ export async function run(options: RunOptions): Promise<void> {
         bus.emit("tool:start", { name: tc.function.name, args, callId: tc.id });
         let result: string;
         try {
-          result = await options.executeTool(tc.function.name, args);
+          result = await options.executeTool(tc.function.name, args, toolContext);
           bus.emit("tool:end", {
             name: tc.function.name,
             callId: tc.id,
