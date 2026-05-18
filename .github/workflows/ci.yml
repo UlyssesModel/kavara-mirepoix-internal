@@ -46,8 +46,8 @@ jobs:
         run: |
           bun -e 'import * as core from "./packages/core/src/index.ts"; const keys = Object.keys(core).sort(); const expected = ["Bus","PACKAGE_NAME","Session","createSessionLogger","run","schemaVersion"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("core surface mismatch:", keys); process.exit(1); } console.log("core surface OK");'
 
-      - name: Smoke test — workingDir/cwd divergence asserts (issue #14 transitional)
-        run: bun packages/core/type-smoke/loop-workdir-assertion.ts
+      - name: Smoke test — ToolContext threads from options.workingDir into executeTool (issue #14)
+        run: bun packages/core/type-smoke/loop-toolcontext.ts
 
       - name: Smoke test — rehydration acceptance (FR-003)
         run: |
@@ -62,18 +62,23 @@ jobs:
 
       - name: Deliverable-tracking check
         run: |
-          # Pick the latest spec that has a `## Deliverables` section. Filters out
-          # pre-convention specs (sub-phase-b, b1) automatically; bootstrap-excludes
-          # the spec that introduced the check + non-sub-phase schema docs.
-          # Lexicographic sort is deterministic across fresh CI checkouts (ls -t is not,
-          # because mtimes don't survive checkout — NQ-2 in the harness spec).
-          LATEST_SPEC=$(grep -l '^## Deliverables' specs/sub-phase-*.md specs/harness-*.md 2>/dev/null \
-            | grep -v 'sub-phase-d1-spike-retirement\|smoke-test-acceptance\|harness-deliverable-tracking' \
-            | sort -r \
-            | head -1)
-          if [ -n "$LATEST_SPEC" ]; then
-            echo "Checking deliverables in: $LATEST_SPEC"
-            bash scripts/check-deliverables.sh "$LATEST_SPEC"
-          else
-            echo "No active spec to check"
-          fi
+          # Check ALL specs that have a `## Deliverables` section, not just the
+          # lexicographically-last. Round-0 used `sort -r | head -1`, but ASCII
+          # ordering puts `s` (sub-phase-*) before `i` (issue-*), silently skipping
+          # issue-driven specs whose deliverables CI must enforce.
+          # Loop-through-all generalizes the gate for multi-spec PRs going forward
+          # — Codex adversarial-review [P2] on issue #14 PR. Per harness spec
+          # NQ-2, mtime-based selection is rejected (mtimes don't survive checkout);
+          # this enumerates instead.
+          # Bootstrap-excludes the spec that introduced the check + non-sub-phase
+          # schema docs that don't satisfy the convention's shape.
+          set -e
+          FAILED=0
+          for SPEC in $(grep -l '^## Deliverables' specs/sub-phase-*.md specs/harness-*.md specs/issue-*.md 2>/dev/null \
+              | grep -v 'sub-phase-d1-spike-retirement\|smoke-test-acceptance\|harness-deliverable-tracking'); do
+            echo "Checking deliverables in: $SPEC"
+            if ! bash scripts/check-deliverables.sh "$SPEC"; then
+              FAILED=1
+            fi
+          done
+          exit $FAILED

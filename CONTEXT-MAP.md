@@ -75,13 +75,15 @@ Terms that mean different things in different contexts. When prose is ambiguous,
 
 A Harness-owned invariant. Three coincident sites in `@mirepoix/*`:
 
-1. **Declared**: `RunOptions.workingDir` in `packages/core/src/loop.ts:58`.
+1. **Declared**: `RunOptions.workingDir` in `packages/core/src/loop.ts`.
 2. **Observed on the wire**: `session:start.workingDir` JSONL field in `packages/core/src/events.ts:45`.
-3. **Implicitly consumed at tool-invocation time** in `@mirepoix/coding` — no literal `process.cwd()` call in source; the binding is structural:
-   - `packages/coding/src/bash.ts:10` — `spawn("bash", ["-c", command])` with no `cwd:` option; the bash child inherits the parent's `process.cwd()`.
-   - `packages/coding/src/execute.ts:17,19,25` — `resolve(args.path)` (Node `path.resolve`) resolves relative paths against `process.cwd()` by default.
+3. **Explicitly received via `ToolContext` parameter** in `@mirepoix/coding` — each tool takes a third `ctx: ToolContext` argument constructed once by the agent loop from `options.workingDir`:
+   - `packages/coding/src/bash.ts` — `spawn("bash", ["-c", command], { cwd: ctx.workingDir })`.
+   - `packages/coding/src/execute.ts` — `resolve(ctx.workingDir, args.path as string)` at the `read` / `write` / `edit` arms.
 
-The NQ-7 concession assertion at `packages/core/src/loop.ts:84` cross-checks all three are coincident and raises with an Issue #14 marker on divergence (per commit `781c653`). The destination shape per [ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) Refactor 2 is a `ToolContext` aggregate passed as a parameter to each tool — eliminating the structural binding.
+Structural typing (`ctx: { workingDir: string }`) is how the `core ↛ coding` boundary is preserved without forcing a `coding → core` import edge — core uses the duck-typed shape, coding owns the concrete `ToolContext` definition (NQ-C).
+
+The landed shape per [ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) Refactor 2 / MS-3 (Issue #14) is the `ToolContext` aggregate passed as a parameter to each tool — eliminated the structural binding.
 
 **Cross-context responsibility:** Pipeline (e.g., on-loop's worktree-per-sub-phase configuration) and Tooling (e.g., Claude Code session-time `--cwd` plumbing) must respect the invariant when they configure the Harness. Violations are Pipeline/Tooling bugs, not Harness bugs.
 
@@ -209,7 +211,7 @@ Seed vocabulary for the follow-up grilling sessions that will populate each per-
 - **The four base tools** per [ADR-002](adrs/ADR-002-tool-surface-and-security-posture.md): `bash`, `read`, `write`, `edit`. Definitions (OpenAI function-call schemas) in a single `tools` array exported from `packages/coding/src/tools.ts`. Implementations: `runBash` in `packages/coding/src/bash.ts`; `read`/`write`/`edit` inline in `executeTool` in `packages/coding/src/execute.ts`. Dispatch via `executeTool(name, args)`.
 - **AI provider surface** — `callProvider` (POST to OpenAI-compatible `/chat/completions`) and `normalizeAssistantMessage` (resolve the two tool-call wire shapes), both exported from `packages/ai/src/provider.ts`. Functions today; an `OpenAIProvider`-class shape is a candidate future refactor — see Watch list.
 - **JSONL session log** per [ADR-005](adrs/ADR-005-context-ownership-and-observability.md) — the source of truth for what happened in a session.
-- **The `workingDir` invariant** (R1) — three coincident sites + NQ-7 concession assertion + `ToolContext` destination per [ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) Refactor 2 / Issue #14.
+- **The `workingDir` invariant** (R1) — three coincident sites; `ToolContext` aggregate (Issue #14) carries the value object through each tool invocation per [ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) Refactor 2 / MS-3.
 - **The Harness skills loader** at `packages/coding/src/prompts.ts` — three structural properties:
   - Module-load side-effect (importing `@mirepoix/coding` performs synchronous filesystem IO at module init).
   - Bundling brittleness (`import.meta.url` + co-located `prompts/coding.md` may not survive esbuild/rollup/webpack).
