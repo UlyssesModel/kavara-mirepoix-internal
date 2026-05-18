@@ -1,6 +1,6 @@
 {
   "name": "@mirepoix/cli",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Mirepoix command-line entry. Wires @mirepoix/{core,coding}. Per ADR-001.",
   "type": "module",
   "main": "src/index.ts",

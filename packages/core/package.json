@@ -1,6 +1,6 @@
 {
   "name": "@mirepoix/core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Mirepoix kernel: agent loop, event bus, session log. Per ADR-001/004/005.",
   "type": "module",
   "main": "src/index.ts",
