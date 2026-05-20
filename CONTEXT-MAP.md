@@ -2,15 +2,15 @@
 
 | | |
 |---|---|
-| **Status** | Initial bootstrap delivery |
-| **Delivery** | [ADR-014 #2] Issue #15 — CONTEXT bootstrap session |
-| **Grilling session** | 2026-05-16 via `/grill-with-docs` against ADR-014, ADR-001, ADR-002, ADR-012, IMPLEMENTATION-PLAN.md |
+| **Status** | Five-context — Service added per [ADR-015](adrs/ADR-015-mirepoix-as-acp-server.md) |
+| **Delivery** | [ADR-014 #2] Issue #15 (initial four-context bootstrap) + [`sub-phase-service-context-skeleton`](specs/sub-phase-service-context-skeleton.md) (Service fifth context) |
+| **Grilling session** | 2026-05-16 via `/grill-with-docs` against ADR-014, ADR-001, ADR-002, ADR-012, IMPLEMENTATION-PLAN.md (four-context bootstrap). First grilling session against the Service context is queued (paired with F4 [#24] and F5 [#25]). |
 | **PR linkage** | _added on commit_ |
 | **Maintenance** | inline during `/grill-with-docs` sessions per [ADR-014 §52](adrs/ADR-014-domain-driven-design-adoption.md) — never batched |
 
 This document is the operational manifestation of [ADR-014 §26–34](adrs/ADR-014-domain-driven-design-adoption.md). It is not a parallel document — it is the artifact ADR-014's "Bounded Context discipline" commitment requires. Per [ADR-014 §36](adrs/ADR-014-domain-driven-design-adoption.md), this file lives at the repository root and is the entry point for any agent or operator who needs to know which vocabulary applies to which conversation.
 
-The per-context `CONTEXT.md` files (one per bounded context) are out of scope for this delivery — Issue #15 scopes the bootstrap to CONTEXT-MAP.md only. They will be populated in follow-up grilling sessions, seeded from the per-context annexes below.
+The per-context `CONTEXT.md` files for Harness, Deployment, Tooling, and Pipeline were out of scope for Issue #15's initial bootstrap. They will be populated in follow-up grilling sessions, seeded from the per-context annexes below. The fifth context's file, [`docs/service/CONTEXT.md`](docs/service/CONTEXT.md), lands as a skeleton via the `sub-phase-service-context-skeleton` PR (R18) — same "skeleton now, canonical-term population during first grilling session" posture, but with the file structurally created so v0.2.0 implementation work has a target for inline updates.
 
 ## Resolution provenance
 
@@ -34,13 +34,14 @@ Each architectural commitment in this document is tagged with a resolution ID (`
 | R14 | Pipeline annex includes Runtime-swap test, allowlist methodology finding, `"0 deviations"` convention |
 | R15 | Deployment annex includes Phase a / Phase b terminology + Tailscale ACL distinct from Tailscale network path |
 | R16 | Watch list includes DDD-drift across per-context CONTEXT.md files |
-| R17 | Distribution as named candidate fifth context; trigger = Phase Four bundler operational |
+| R17 | Distribution as named candidate sixth context; trigger = Phase Four bundler operational (originally posited as fifth; Service occupied that slot per R18) |
+| R18 | Service context promoted from candidate to active fifth context per [ADR-015](adrs/ADR-015-mirepoix-as-acp-server.md) §39 / §89; skeleton landed via [`sub-phase-service-context-skeleton.md`](specs/sub-phase-service-context-skeleton.md). Canonical-term population deferred to first Service-context grilling session. |
 
-_Note: the cross-context glossary below renders 10 entries — R5 locked seven (`review`, `agent`, `session`, `phase`, `spec`, `skill`, `extension`); R1 added `workingDir`, R2 added `tool` vs `Tooling`, and R6 added `prompt` during the same session._
+_Note: the cross-context glossary below renders 10 entries — R5 locked seven (`review`, `agent`, `session`, `phase`, `spec`, `skill`, `extension`); R1 added `workingDir`, R2 added `tool` vs `Tooling`, and R6 added `prompt` during the same session. R18's term additions (`tenant`, `attestation manifest`/`field`/`evidence`, `metering tick`, etc.) are deferred to the first Service-context grilling session per the skeleton's NQ-3._
 
-## The four bounded contexts
+## The five bounded contexts
 
-Per [ADR-014 §26–34](adrs/ADR-014-domain-driven-design-adoption.md):
+Per [ADR-014 §26–34](adrs/ADR-014-domain-driven-design-adoption.md) and [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md):
 
 | Context | Subdomain | What it owns | `CONTEXT.md` lives at |
 |---|---|---|---|
@@ -48,6 +49,7 @@ Per [ADR-014 §26–34](adrs/ADR-014-domain-driven-design-adoption.md):
 | **Deployment** | Supporting | The operational infrastructure that runs the Harness — two-venue model | `docs/deployment/CONTEXT.md` |
 | **Tooling** | Generic | Plugins and skills that Claude Code (or a future Mirepoix CLI) loads at session-time | `docs/tooling/CONTEXT.md` |
 | **Pipeline** | Supporting | The methodology and artifacts that produce work in the Harness | `docs/pipeline/CONTEXT.md` |
+| **Service** | Supporting | Multi-tenant hosting, ACP-server operations, attestation manifest consumption, commercialization concerns (per [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md)) | [`docs/service/CONTEXT.md`](docs/service/CONTEXT.md) |
 
 ### The Runtime-swap test (R4)
 
@@ -195,6 +197,26 @@ Pipeline's methodology (sub-phase letters, `FR-X`/`NQ-X`/`OQ-X`/`MS-X`/`MQ-X`, t
 
 **Failure mode:** Spec encodes venue-specific assumption → spec is the violator. Methodology stays venue-agnostic.
 
+### Service edges (placeholders — DDD pattern deferred to first Service grilling session)
+
+Four new edges land with the Service fifth context per [ADR-015](adrs/ADR-015-mirepoix-as-acp-server.md) / [sub-phase `service-context-skeleton`](specs/sub-phase-service-context-skeleton.md). The skeleton commits the edges' structural existence; the binding DDD-pattern classification (Customer/Supplier vs Conformist vs Anti-Corruption Layer vs Partnership vs Published Language vs Separate Ways) is the first Service-context grilling session's job. Each edge below carries enough description to scope what flows across it; the pattern lock is grep-targetable via "placeholder — DDD pattern deferred".
+
+#### Service ↔ Harness — (placeholder — DDD pattern deferred to first Service grilling session)
+
+The `@mirepoix/acp-server` package (ADR-015 deliverable 1) is *in* the Harness context but its consumer side (the ACP client surface, the multi-tenant routing, the attestation manifest consumption) is *in* the Service context. The edge governs what the Service surface exposes to ACP clients and what it expects from the Harness's agent loop, `MirepoixEvent` bus, and tool surface. Candidate pattern (to be locked): **Conformist** — Service adapts to whatever shape Harness publishes on the JSONL wire and on `RunOptions` / `Session`, since Harness is the Core Domain. Grilling session locks.
+
+#### Service ↔ Deployment — (placeholder — DDD pattern deferred to first Service grilling session; see also F5 / [#25](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/25))
+
+Service runs on Deployment's venues, and Deployment-side posture (Mirepoix-secure deny-all-egress per ADR-010; Mirepoix-build standard egress) shapes what the Service surface can do (e.g., the local-only ACP-server posture per F2 / [#22](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/22)). The boundary between "where Mirepoix runs" (Deployment) and "what Mirepoix offers as a hosted surface" (Service) is the F5 finding — the most fuzzy of the four Service edges. Candidate pattern (to be locked): **Conformist + venue overlay** — Service conforms to Deployment's posture, with per-venue Service-side adaptation (e.g., authentication paths differ between venues). Grilling session locks; F5 issue tracks.
+
+#### Service ↔ Tooling — (placeholder — DDD pattern deferred to first Service grilling session)
+
+The multi-agent face-off (ADR-013 commitment 4) is venue-gated to Mirepoix-build, but ADR-015 commitment 7 says all ACP clients get face-off automatically — the F3 contradiction ([#23](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/23)). The Service ↔ Tooling edge is where this contradiction has to resolve at the integration layer. Candidate pattern (to be locked): **Anti-Corruption Layer** — Service translates Deployment-posture-aware "Codex availability" into a Service-side face-off-availability flag that the ACP server surfaces (or doesn't) to clients. Grilling session locks; F3 issue tracks.
+
+#### Service ↔ Pipeline — (placeholder — DDD pattern deferred to first Service grilling session)
+
+v0.2.0 implementation sub-phases (ADR-015 deliverables 1, 2, 4, 5, 6) flow through the on-loop Pipeline like any Harness sub-phase. The Service context is a Customer of Pipeline (specs land at `specs/`; deliverable-tracking applies; the eight on-loop phases apply). Candidate pattern (to be locked): **Customer/Supplier** — identical to Harness ↔ Pipeline; Service is a Customer; Pipeline supplies PRs that Service's CI gates. Grilling session locks.
+
 ## Per-context annexes
 
 Seed vocabulary for the follow-up grilling sessions that will populate each per-context `CONTEXT.md`. Not exhaustive — starter terms. Refinement happens in those sessions.
@@ -290,6 +312,23 @@ Seed vocabulary for the follow-up grilling sessions that will populate each per-
   - **Phase b** — multi-A100 Qwen3-Coder-480B expansion (future-state).
 - **Venue overlays** as anticipated future-state — currently single-repo (`UlyssesModel/kavara-mirepoix-internal`); future-state per-venue repos (e.g., `UlyssesModel/mirepoix-kavara-builder`, `UlyssesModel/mirepoix-scotty-gpu`) emerge only when a venue accumulates enough venue-specific configuration to justify pulling out of the shared base.
 
+### Service — Supporting Subdomain ([`docs/service/CONTEXT.md`](docs/service/CONTEXT.md)) (R18)
+
+**Boundary.** Multi-tenant hosting, ACP-server operations, attestation manifest consumption, and the commercialization concerns that v0.2.0 productizes (per [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md)). Distinct from Harness (the package surface and the JSONL wire), from Deployment (the venue posture and host operation), from Tooling (the runtimes consumed at session-time), and from Pipeline (the methodology producing PRs).
+
+**Status.** Skeleton-only. The first Service-context grilling session populates canonical terms; until then, seed-vocabulary entries below carry [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md) wording verbatim and are placeholders.
+
+**Seed vocabulary (placeholders pending first grilling session):**
+
+- **tenant identity & routing** — placeholder; [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md) + §41. v0.2.0 single-tenant via the `tenant: "solo-operator"` shape; v0.2.1 multi-tenant.
+- **authentication & authorization** — placeholder; [ADR-015 §41](adrs/ADR-015-mirepoix-as-acp-server.md). v0.2.0 single-tenant via operator-owned API keys; v0.2.1 multi-tenant via OIDC/SAML/passkey.
+- **metering & billing** — placeholder; [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md) + §91. Deliverable 4 lands `acp:*` event arms (`acp:session-init`, `acp:session-prompt`, `acp:session-cancel`, `acp:session-load`, `acp:tool-call`, `acp:tool-call-update`, `acp:request-permission`, `acp:metering-tick`) and per-session, per-tool-call, per-methodology-feature attribution.
+- **per-tenant resource quotas** — placeholder; [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md).
+- **per-tenant data residency** — placeholder; [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md) + §105 (HIGH-risk deferred concern).
+- **API surface beyond ACP** — placeholder; [ADR-015 §39](adrs/ADR-015-mirepoix-as-acp-server.md). Admin endpoints, billing webhooks, audit-log export.
+- **single-tenant `solo-operator` placeholder** — [ADR-015 §41](adrs/ADR-015-mirepoix-as-acp-server.md). v0.2.0 ships with `tenant: "solo-operator"` so v0.2.1's multi-tenant plug-in does not require rewriting the server shape (deferred-but-shaped pattern).
+- **attestation manifest / field / evidence vocabulary** — placeholder; resolution deferred to F4 / [#24](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/24). The drifted-vocabulary canonicalization lives here once F4 lands.
+
 ## Watch list
 
 Deferred collisions and forward-looking concerns that will activate as Mirepoix's phases land. When activated, the next grilling session touching the area updates this document inline.
@@ -299,13 +338,16 @@ Deferred collisions and forward-looking concerns that will activate as Mirepoix'
 - **`OpenAIProvider` class as candidate Harness refactor** — `@mirepoix/ai` currently exports `callProvider` + `normalizeAssistantMessage` as functions. A class-based shape is a plausible future refactor that would crystallize when wire-format abstraction (above) lands. Watch for it; do not pre-create the vocabulary.
 - **Phase Four — Kavara-Mirepoix bundle and the bundler** ([IMPLEMENTATION-PLAN.md §65](IMPLEMENTATION-PLAN.md)) — when the distribution-tag enforcement (`internal` / `public` / `customer-licensed` / `collaborator-shared`) becomes operational, the question of whether **Distribution** is a fifth context becomes pressing (see Candidate future contexts).
 - **Phase Five — Customer-X-Mirepoix instances** ([IMPLEMENTATION-PLAN.md §67](IMPLEMENTATION-PLAN.md)) — multi-tenant per-customer remixes change Deployment vocabulary materially (per-customer venue overlays + per-customer extension layering).
-- **DDD vocabulary drift across per-context CONTEXT.md files** (R16) — once the four per-context CONTEXT.md files are populated by follow-up grilling sessions, a periodic audit catches same-term-different-definition drift across files. Likely cadence: per-major-sub-phase or annual. The audit is a small `/grill-with-docs` session focused on the cross-context glossary section of this document plus the four per-context CONTEXT.md files.
+- **DDD vocabulary drift across per-context CONTEXT.md files** (R16) — once the per-context CONTEXT.md files are populated by follow-up grilling sessions, a periodic audit catches same-term-different-definition drift across files. Likely cadence: per-major-sub-phase or annual. The audit is a small `/grill-with-docs` session focused on the cross-context glossary section of this document plus the per-context CONTEXT.md files.
+- **Service context maintenance posture during v0.2.0 implementation** (R18) — every ADR-015 deliverable sub-phase (1, 2, 4, 5, 6) should update [`docs/service/CONTEXT.md`](docs/service/CONTEXT.md) inline when it resolves new vocabulary, per the [ADR-014 §52](adrs/ADR-014-domain-driven-design-adoption.md) inline-during-grilling discipline. The skeleton's placeholder seed vocabulary becomes canonical incrementally; do not batch maintenance to the end.
 
 ## Candidate future contexts
 
-Today: four contexts ([ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) binding). The codebase implies no fifth context now, but one candidate is named so future grilling has a place to start.
+Today: five contexts (the four from [ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) plus Service per [ADR-015](adrs/ADR-015-mirepoix-as-acp-server.md)). One candidate is named so future grilling has a place to start.
 
-### Distribution / Licensing (R17)
+> **Note on ordinal:** Distribution was originally posited as the *candidate fifth context* in R17. Service landed as the fifth context via [ADR-015](adrs/ADR-015-mirepoix-as-acp-server.md) in 2026-05; Distribution is now the **candidate sixth context**, with the R17 promotion trigger unchanged.
+
+### Distribution / Licensing (R17, now candidate sixth context)
 
 **Vocabulary cluster:** distribution tags (`internal` / `public` / `customer-licensed` / `collaborator-shared`); the bundler; layered overlays (Mirepoix-base / Kavara-Mirepoix / Customer-X-Mirepoix); per-customer remixes; signed customer deliverables.
 
@@ -313,7 +355,7 @@ Today: four contexts ([ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) b
 
 **Today's status:** vocabulary partially in Harness (which package gets which tag), partially in Deployment (venue overlays per [ADR-012 §49](adrs/ADR-012-two-venue-deployment-model.md)), partially in Tooling (extension distribution model per ADR-006/007). No single context owns it cleanly because the bundler has not shipped.
 
-**Promotion trigger:** **Phase Four bundler operational.** Specifically — is `mirepoix bundle` shipping today as a runnable command that enforces distribution tags at build time? If yes, evaluate whether Distribution has enough mass (independent vocabulary, independent decisions, independent failure modes) to justify its own context. If yes, a superseding ADR (likely ADR-015 or later) promotes Distribution to fifth context and this document gains a fifth annex.
+**Promotion trigger:** **Phase Four bundler operational.** Specifically — is `mirepoix bundle` shipping today as a runnable command that enforces distribution tags at build time? If yes, evaluate whether Distribution has enough mass (independent vocabulary, independent decisions, independent failure modes) to justify its own context. If yes, a superseding ADR (likely ADR-016 or later, since ADR-015 promoted Service into the fifth slot) promotes Distribution to sixth context and this document gains a sixth annex.
 
 **Evaluation rubric (for future grilling):** has the trigger fired? If `mirepoix bundle` ships as a command, evaluate. If not, defer.
 
