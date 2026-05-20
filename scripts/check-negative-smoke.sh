@@ -68,6 +68,50 @@ if [[ $# -eq 0 ]]; then
   exit 2
 fi
 
+# Reject patterns lacking a diagnostic anchor. Bare-word patterns
+# (e.g., just `dispatchId`, `workingDir`, `outcome`) match anywhere in
+# tsc's output, including unrelated expected-type renderings where the
+# same name appears as a *satisfied* property — false-positive matching
+# paths. Each pattern must contain at least one syntactic marker that
+# constrains its match to a real diagnostic clause:
+#
+#   \.ts                              — file reference (file-anchored)
+#   TS[0-9]+                          — TypeScript error code
+#   Property '                        — start of "Property 'X' is missing"
+#   missing the following properties  — multi-field missing clause
+#   \([0-9]+,[0-9]+\)                 — line:col diagnostic location
+#
+# Codex adversarial-review on PR #30 round 3 (2026-05-20) escalated this
+# from "convention-only guard" (CLAUDE.md Hard don't) to "runner-enforced
+# minimum." Same decay class as the zero-pattern guard above: a future CI
+# author who skips CLAUDE.md can recreate the bare-word false-positive
+# mode unless the runner itself enforces.
+ANCHOR_REGEX="(\.ts|TS[0-9]+|Property '|missing the following properties|\([0-9]+,[0-9]+\))"
+for pattern in "$@"; do
+  if ! grep -qE -- "$ANCHOR_REGEX" <<<"$pattern"; then
+    echo "ERROR: pattern '$pattern' lacks a diagnostic anchor." >&2
+    echo "       Bare-word patterns match anywhere in tsc output, including unrelated" >&2
+    echo "       expected-type renderings where the same name appears as a *satisfied*" >&2
+    echo "       property — false-positive matching paths." >&2
+    echo "" >&2
+    echo "       Each pattern must contain at least one of:" >&2
+    echo "         \\.ts                              — file reference" >&2
+    echo "         TS[0-9]+                          — TypeScript error code" >&2
+    echo "         Property '                        — \"Property 'X' is missing\" clause start" >&2
+    echo "         missing the following properties  — multi-field missing clause" >&2
+    echo "         \\([0-9]+,[0-9]+\\)                 — line:col diagnostic location" >&2
+    echo "" >&2
+    echo "       Example fix: anchor the literal to its source file or diagnostic clause." >&2
+    echo "         '$pattern'                       → bad-word; rejected" >&2
+    echo "         'somefile\\.ts.*$pattern'        → file-anchored; accepted" >&2
+    echo "         \"Property '$pattern' is missing\" → diagnostic-anchored; accepted" >&2
+    echo "" >&2
+    echo "       See CLAUDE.md (## Conventions: diagnostic-anchored content)." >&2
+    echo "       Origin: Codex adversarial-review on PR #30 round 3 (2026-05-20)." >&2
+    exit 2
+  fi
+done
+
 # Capture tsc stdout+stderr and exit code without letting set -e trip.
 output=$(bun x tsc --noEmit -p "$tsconfig" 2>&1) && tsc_exit=0 || tsc_exit=$?
 
