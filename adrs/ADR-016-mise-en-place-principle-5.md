@@ -107,8 +107,9 @@ ADR-016 commits to the principle and the structural placement; implementation sh
 ### PR 2 — kavara-mirepoix-internal harmonization (in `UlyssesModel/kavara-mirepoix-internal`)
 
 - `adrs/ADR-016-mise-en-place-principle-5.md` — this document
-- Update `CONTEXT-MAP.md` — Tooling-context vocabulary now includes "Justified Action" / "Five Whys"
-- Update `docs/tooling/CONTEXT.md` — add the principle to the Tooling-context Ubiquitous Language
+- Update `CONTEXT-MAP.md` — Tooling annex (R13 seed vocabulary) gains a Justified Action / Five Whys entry; resolution provenance gains R19 per the ADR-015 → R18 precedent; cross-references section gains ADR-016
+
+Per-context `docs/tooling/CONTEXT.md` is NOT updated in PR 2. The per-context CONTEXT.md files for Harness, Deployment, Tooling, and Pipeline are deferred per `CONTEXT-MAP.md` line 13 (only the Service skeleton has shipped, via the dedicated `sub-phase-service-context-skeleton` PR #28). ADR-014 Follow-up 1 tracks population of the remaining four skeletons. When the Tooling skeleton lands, Justified Action / Five Whys is its first canonical term per R19 — until then, the Tooling annex in `CONTEXT-MAP.md` is the canonical home. This deviation from the original PR 2 file list was caught in face-off round 1 (Claude reviewer + Codex teammate, 2026-05-20) and hardened here so the ADR's Implementation Notes match what actually landed.
 
 ### Sequencing
 
