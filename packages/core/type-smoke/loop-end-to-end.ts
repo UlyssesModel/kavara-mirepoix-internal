@@ -3,7 +3,11 @@
 // Drives `run` with a stub provider (NQ-8 seam). Asserts one-shot (no tool
 // call) and tool round-trip event sequences match the contract.
 
-import { type AssistantMessage, Session, run } from "../src/index";
+// `AssistantMessage` lives in @mirepoix/ai (declared dep of @mirepoix/core).
+// Core re-exports `ProviderFn`/`RunOptions` whose `provider` returns this
+// type, but the type itself is not part of core's public surface.
+import type { AssistantMessage } from "@mirepoix/ai";
+import { Session, run } from "../src/index";
 
 async function oneShot(): Promise<void> {
   const session = new Session({ id: "t1", systemPrompt: "sp" });
@@ -16,7 +20,9 @@ async function oneShot(): Promise<void> {
     "message:assistant",
     "session:end",
   ] as const) {
-    session.bus.on(tag, () => events.push(tag));
+    session.bus.on(tag, () => {
+      events.push(tag);
+    });
   }
   await run({
     session,
@@ -60,7 +66,9 @@ async function toolRoundTrip(): Promise<void> {
     "tool:error",
     "session:end",
   ] as const) {
-    session.bus.on(tag, () => events.push(tag));
+    session.bus.on(tag, () => {
+      events.push(tag);
+    });
   }
   let call = 0;
   await run({
@@ -117,7 +125,9 @@ async function toolThrowContinues(): Promise<void> {
   const session = new Session({ id: "t3", systemPrompt: "sp" });
   const events: string[] = [];
   for (const tag of ["tool:start", "tool:end", "tool:error", "session:end"] as const) {
-    session.bus.on(tag, () => events.push(tag));
+    session.bus.on(tag, () => {
+      events.push(tag);
+    });
   }
   let call = 0;
   await run({

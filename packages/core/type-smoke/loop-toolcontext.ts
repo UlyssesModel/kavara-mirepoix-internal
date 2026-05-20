@@ -34,8 +34,9 @@ import { join } from "node:path";
 // `(name, args, ctx: ToolContext) => Promise<string>`) is assignable to
 // core's `RunOptions.executeTool` (typed as
 // `(name, args, ctx: { workingDir: string }) => Promise<string>`).
+import type { AssistantMessage } from "@mirepoix/ai";
 import { executeTool } from "../../coding/src/index";
-import { type AssistantMessage, Session, run } from "../src/index";
+import { Session, run } from "../src/index";
 
 const STUB_DIVERGED_PATH = "/__intentionally_diverged_from_cwd__";
 

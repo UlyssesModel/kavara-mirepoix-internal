@@ -16,7 +16,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { tools } from "@mirepoix/coding";
-import { type AssistantMessage, Session, createSessionLogger, run } from "@mirepoix/core";
+import { Session, createSessionLogger, run } from "@mirepoix/core";
+// `AssistantMessage` lives in @mirepoix/ai, which is NOT a declared
+// dependency of @mirepoix/cli per ADR-001 (cli only depends on
+// @mirepoix/{core,coding}). This test-only relative reach mirrors the
+// pattern in packages/core/type-smoke/loop-toolcontext.ts (which reaches
+// into @mirepoix/coding the same way) and does not introduce a runtime
+// package edge.
+import type { AssistantMessage } from "../../ai/src/index";
 
 import { attachStdoutRenderer } from "../src/render";
 
