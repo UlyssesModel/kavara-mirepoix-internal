@@ -34,6 +34,13 @@ jobs:
       - name: Type-check @mirepoix/core
         run: bun x tsc --noEmit -p packages/core/tsconfig.json
 
+      - name: Negative type-smoke — @mirepoix/core (unknown-tag.ts must fail tsc)
+        # Inverted exit: tsc MUST error on the bad event tags / payloads in
+        # unknown-tag.ts; a clean exit means the type constraints were relaxed
+        # and the negative test silently no longer enforces. See
+        # packages/core/type-smoke/unknown-tag.ts header.
+        run: "! bun x tsc --noEmit -p packages/core/type-smoke/tsconfig-negative.json"
+
       - name: Smoke test — @mirepoix/ai surface
         run: |
           bun -e 'import * as ai from "./packages/ai/src/index.ts"; const keys = Object.keys(ai).sort(); const expected = ["PACKAGE_NAME","callProvider","extractJsonObjects","normalizeAssistantMessage","tryParseToolCallsFromContent"]; if (JSON.stringify(keys) !== JSON.stringify(expected)) { console.error("ai surface mismatch:", keys); process.exit(1); } console.log("ai surface OK");'
@@ -55,6 +62,13 @@ jobs:
 
       - name: Type-check @mirepoix/cli
         run: bun x tsc --noEmit -p packages/cli/tsconfig.json
+
+      - name: Negative type-smoke — @mirepoix/cli (run-options-missing-wd.ts must fail tsc)
+        # Inverted exit: tsc MUST error on the RunOptions call omitting
+        # workingDir / systemPromptFile; a clean exit means those fields became
+        # optional and NQ-7 / FR-013-3 / OQ-4 are no longer enforced at the
+        # type layer. See packages/cli/type-smoke/run-options-missing-wd.ts.
+        run: "! bun x tsc --noEmit -p packages/cli/type-smoke/tsconfig-negative.json"
 
       - name: Smoke test — @mirepoix/cli surface
         run: |

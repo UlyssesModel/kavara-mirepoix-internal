@@ -52,9 +52,9 @@ implementation of this sub-phase.
 This convention applies retroactively to all sub-phase specs, including
 `specs/sub-phase-d.md` (resolutions in PR #5).
 
-## NQ-7 concession: workingDir invariant
+## NQ-7 retired
 
-`packages/core/src/loop.ts` asserts that `options.workingDir === process.cwd()` at session:start and throws with an issue-#14 marker on divergence — a temporary cross-check, not value-derivation, exposing the silent footgun where `@mirepoix/coding` tools bind to `process.cwd()` at spawn-time while `RunOptions.workingDir` is structurally advisory. The negative integration test at `packages/core/type-smoke/loop-workdir-assertion.ts` is wired into CI and proves the assertion fires; the positive smoke at `packages/core/type-smoke/loop-end-to-end.ts` uses `workingDir: process.cwd()` at its five constructor sites so the divergence does not trip. The assertion (and this section, and the negative test, and its CI step) gets removed when [issue #14](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/14) lands the ToolContext plumbing — the first concrete ADR-014 Refactor 2 deliverable.
+The temporary `options.workingDir === process.cwd()` assertion in `packages/core/src/loop.ts` and its negative smoke (`loop-workdir-assertion.ts`) were removed by [issue #14](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/14) / ADR-014 Refactor 2 (merged in PR #18). `ToolContext` now threads `workingDir` from `RunOptions` to `executeTool` directly — no `process.cwd()` cross-check needed. The positive smoke `packages/core/type-smoke/loop-toolcontext.ts` is the standing guard.
 
 ## Multi-agent face-off (Codex as teammate)
 
