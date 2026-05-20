@@ -14,12 +14,25 @@
 # non-zero, which is what CI consumes.
 #
 # Usage:
-#   scripts/check-negative-smoke.sh <tsconfig-negative.json> [<pattern>...]
+#   scripts/check-negative-smoke.sh <tsconfig-negative.json> <pattern> [<pattern>...]
 #
-# Patterns are regexes consumed by `grep -E`. Examples:
-#   'unknown-tag\.ts.*TS2345'    file + TypeScript error code on the same line
-#   'dispatchId'                  the specific field whose absence the smoke proves
-#   'session:start--invalid'      the literal bad tag the smoke types against
+# Patterns are regexes consumed by `grep -E`. **At least one pattern is
+# required** — calling the runner with only the tsconfig argument is
+# explicitly rejected so a future CI author cannot recreate the bare
+# `! tsc` false-positive mode by complying with "calls the runner" while
+# skipping the diagnostic-anchoring step. Codex adversarial-review on
+# PR #30 round 2 (2026-05-20) is the origin of this guard.
+#
+# Patterns SHOULD be diagnostic-anchored (per the Codex finding on PR
+# #30 round 1, 2026-05-20):
+#   'unknown-tag\.ts.*TS2345'              file + TS code on the same line
+#   "Property 'dispatchId' is missing"     anchored to the specific case
+#   'session:start--invalid'                literal bad-tag string the smoke types against
+#
+# Bare-word patterns (e.g., just `'dispatchId'`) are forbidden because they
+# match anywhere in tsc's output, including unrelated expected-type
+# renderings where the same name appears as a satisfied property —
+# false-positive matching paths.
 #
 # This convention is load-bearing — bare `! tsc` for negative smokes is
 # forbidden per CLAUDE.md (Hard don'ts) following the Codex adversarial-review
@@ -29,13 +42,29 @@ set -uo pipefail
 
 tsconfig="${1:-}"
 if [[ -z "$tsconfig" ]]; then
-  echo "Usage: $0 <tsconfig-negative.json> [<expected-diagnostic-pattern>...]" >&2
+  echo "Usage: $0 <tsconfig-negative.json> <pattern> [<pattern>...]" >&2
   exit 2
 fi
 shift
 
 if [[ ! -f "$tsconfig" ]]; then
   echo "ERROR: tsconfig not found: $tsconfig" >&2
+  exit 2
+fi
+
+# Reject zero-pattern invocations. A tsconfig-only call would collapse
+# the gate to the exit-code-only check (semantically identical to the
+# forbidden bare `! tsc` form). Codex adversarial-review on PR #30 round
+# 2 (2026-05-20) escalated this from "convention-only guard" to
+# "runner-enforced minimum" — conventions decay; structural enforcement
+# doesn't.
+if [[ $# -eq 0 ]]; then
+  echo "ERROR: at least one expected diagnostic pattern is required." >&2
+  echo "       A tsconfig-only invocation would collapse to the bare exit-code check" >&2
+  echo "       (semantically identical to the forbidden \`! bun x tsc -p ...\` form)." >&2
+  echo "       See CLAUDE.md (## Conventions: 'Negative type-smokes must assert exit" >&2
+  echo "       code AND diagnostic-anchored content')." >&2
+  echo "Usage: $0 <tsconfig-negative.json> <pattern> [<pattern>...]" >&2
   exit 2
 fi
 

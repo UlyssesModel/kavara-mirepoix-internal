@@ -34,6 +34,26 @@ jobs:
       - name: Type-check @mirepoix/core
         run: bun x tsc --noEmit -p packages/core/tsconfig.json
 
+      - name: Negative-smoke runner — self-test rejects zero-pattern invocations
+        # Defense-in-depth: the runner's zero-pattern guard prevents a
+        # future CI author from recreating the forbidden `! tsc` form by
+        # calling the runner with only a tsconfig (semantically identical
+        # to bare exit-code-only). This step exercises the guard so a
+        # regression in the runner itself (someone removing or weakening
+        # the check) is caught by CI rather than silently shipping.
+        # Codex adversarial-review on PR #30 round 2 (2026-05-20).
+        run: |
+          set +e
+          bash scripts/check-negative-smoke.sh packages/core/type-smoke/tsconfig-negative.json
+          actual_exit=$?
+          set -e
+          if [[ "$actual_exit" -ne 2 ]]; then
+            echo "FAIL: runner accepted a zero-pattern invocation (exit $actual_exit; expected 2)" >&2
+            echo "      The guard added in 7395092+ has regressed; bare exit-code-only gates are forbidden." >&2
+            exit 1
+          fi
+          echo "PASS: runner correctly rejects zero-pattern invocations (exit $actual_exit)"
+
       - name: Negative type-smoke — @mirepoix/core (unknown-tag.ts must fail with expected diagnostics)
         # Runner asserts BOTH (a) tsc exits non-zero AND (b) the listed
         # diagnostic patterns appear in tsc output. A bare `! bun x tsc`
