@@ -54,6 +54,41 @@ jobs:
           fi
           echo "PASS: runner correctly rejects zero-pattern invocations (exit $actual_exit)"
 
+      - name: Negative-smoke runner — self-test rejects bare-word patterns
+        # Defense-in-depth (companion to the zero-pattern self-test above):
+        # the runner's diagnostic-anchor guard prevents a future CI author
+        # from passing a bare-word pattern like `dispatchId` that matches
+        # anywhere in tsc output, including unrelated expected-type
+        # renderings — the false-positive mode Codex flagged on PR #30
+        # round 3 (2026-05-20). This step exercises the guard with two
+        # known-bad patterns so a regression in the runner's
+        # `ANCHOR_REGEX` check is caught by CI rather than silently
+        # shipping.
+        run: |
+          # Test 1: bare camelCase identifier — must be rejected
+          set +e
+          bash scripts/check-negative-smoke.sh packages/core/type-smoke/tsconfig-negative.json 'dispatchId' >/dev/null
+          actual_exit=$?
+          set -e
+          if [[ "$actual_exit" -ne 2 ]]; then
+            echo "FAIL: runner accepted bare-word pattern 'dispatchId' (exit $actual_exit; expected 2)" >&2
+            echo "      The diagnostic-anchor guard has regressed; bare-word patterns are forbidden." >&2
+            exit 1
+          fi
+          echo "PASS: runner rejects bare-word pattern 'dispatchId' (exit $actual_exit)"
+
+          # Test 2: catch-all `.*` — also lacks an anchor, must be rejected
+          set +e
+          bash scripts/check-negative-smoke.sh packages/core/type-smoke/tsconfig-negative.json '.*' >/dev/null
+          actual_exit=$?
+          set -e
+          if [[ "$actual_exit" -ne 2 ]]; then
+            echo "FAIL: runner accepted catch-all pattern '.*' (exit $actual_exit; expected 2)" >&2
+            echo "      The diagnostic-anchor guard has regressed; catch-all patterns are forbidden." >&2
+            exit 1
+          fi
+          echo "PASS: runner rejects catch-all pattern '.*' (exit $actual_exit)"
+
       - name: Negative type-smoke — @mirepoix/core (unknown-tag.ts must fail with expected diagnostics)
         # Runner asserts BOTH (a) tsc exits non-zero AND (b) the listed
         # diagnostic patterns appear in tsc output. A bare `! bun x tsc`
@@ -66,7 +101,7 @@ jobs:
           bash scripts/check-negative-smoke.sh \
             packages/core/type-smoke/tsconfig-negative.json \
             'unknown-tag\.ts.*TS2345' \
-            'session:start--invalid' \
+            'unknown-tag\.ts.*session:start--invalid' \
             "Property 'dispatchId' is missing" \
             "Property 'gateVerdict' is missing" \
             "Property 'outcome' is missing"
