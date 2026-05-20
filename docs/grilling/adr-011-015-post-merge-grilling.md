@@ -43,4 +43,15 @@
 
 ## Followup queue
 
-Six new GitHub issues to file (F1-F6) + one small commit (F2 — runbook addition).
+Six new GitHub issues filed (F1-F6); F2's remediation is a small runbook commit, tracked under its issue.
+
+| Finding | Issue                                                                                   | Remediation kind                    |
+| ------- | --------------------------------------------------------------------------------------- | ----------------------------------- |
+| F1      | [#21](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/21)               | Verification + possible ADR amend   |
+| F2      | [#22](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/22)               | Small runbook commit                |
+| F3      | [#23](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/23)               | New ADR (likely ADR-016)            |
+| F4      | [#24](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/24)               | CONTEXT.md population + ADR footer  |
+| F5      | [#25](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/25)               | CONTEXT-MAP.md population           |
+| F6      | [#26](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/26)               | Status check + ADR amend / footnote |
+
+F4 and F5 are paired (both are CONTEXT.md work on the same merged-ADR origin) and should be tackled in the same on-loop run after [#15](https://github.com/UlyssesModel/kavara-mirepoix-internal/issues/15) lands.
