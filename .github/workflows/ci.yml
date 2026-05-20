@@ -47,9 +47,9 @@ jobs:
             packages/core/type-smoke/tsconfig-negative.json \
             'unknown-tag\.ts.*TS2345' \
             'session:start--invalid' \
-            'dispatchId' \
-            'gateVerdict' \
-            'outcome'
+            "Property 'dispatchId' is missing" \
+            "Property 'gateVerdict' is missing" \
+            "Property 'outcome' is missing"
 
       - name: Smoke test — @mirepoix/ai surface
         run: |
@@ -81,8 +81,8 @@ jobs:
           bash scripts/check-negative-smoke.sh \
             packages/cli/type-smoke/tsconfig-negative.json \
             'run-options-missing-wd\.ts.*TS2345' \
-            'workingDir' \
-            'systemPromptFile'
+            'missing the following properties.*workingDir' \
+            'missing the following properties.*systemPromptFile'
 
       - name: Smoke test — @mirepoix/cli surface
         run: |
