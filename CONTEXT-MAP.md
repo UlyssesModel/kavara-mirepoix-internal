@@ -36,6 +36,7 @@ Each architectural commitment in this document is tagged with a resolution ID (`
 | R16 | Watch list includes DDD-drift across per-context CONTEXT.md files |
 | R17 | Distribution as named candidate sixth context; trigger = Phase Four bundler operational (originally posited as fifth; Service occupied that slot per R18) |
 | R18 | Service context promoted from candidate to active fifth context per [ADR-015](adrs/ADR-015-mirepoix-as-acp-server.md) §39 / §89; skeleton landed via [`sub-phase-service-context-skeleton.md`](specs/sub-phase-service-context-skeleton.md). Canonical-term population deferred to first Service-context grilling session. |
+| R19 | Justified Action / Five Whys ratified as Tooling-context vocabulary per [ADR-016](adrs/ADR-016-mise-en-place-principle-5.md); foundational fifth principle in the mise-en-place contract (v0.5.0). Fork-shaped extension of the Karpathy four authorized by ADR-014 §43 Generic Domain principle. |
 
 _Note: the cross-context glossary below renders 10 entries — R5 locked seven (`review`, `agent`, `session`, `phase`, `spec`, `skill`, `extension`); R1 added `workingDir`, R2 added `tool` vs `Tooling`, and R6 added `prompt` during the same session. R18's term additions (`tenant`, `attestation manifest`/`field`/`evidence`, `metering tick`, etc.) are deferred to the first Service-context grilling session per the skeleton's NQ-3._
 
@@ -253,8 +254,9 @@ Seed vocabulary for the follow-up grilling sessions that will populate each per-
 
 - **Plugins**: `on-loop` (Joe Stein's multi-agent SDLC pipeline plugin); `mise-en-place` (Kavara's agent behavioral-contract plugin); `codex-plugin-cc` (Codex-as-teammate integration); Matt Pocock's skill marketplace.
 - **Skills**: `grill-with-docs`, `grill-me`; Anthropic-bundled (`frontend-design`, `prototype`, `diagnose`, `triage`, `caveman`, `tdd`, etc.).
-- **mise-en-place addenda** — #1–4 today; #5 (multi-agent review) in-flight; #6 (DDD-aligned vocabulary discipline) from [ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) follow-up.
-- **Karpathy four principles** — adapted upstream concept; mise-en-place applies them.
+- **mise-en-place addenda** — #1–5 today (#5 multi-agent review landed at v0.4.0 on 2026-05-15); #6 (DDD-aligned vocabulary discipline) from [ADR-014](adrs/ADR-014-domain-driven-design-adoption.md) follow-up bumped to v0.6.0 per [ADR-016](adrs/ADR-016-mise-en-place-principle-5.md) sequencing.
+- **Karpathy four principles** — adapted upstream concept; mise-en-place applies them as principles #1–4 (think first, prefer simplicity, change surgically, drive toward a goal).
+- **Justified Action / Five Whys** (R19) — mise-en-place Principle 5, foundational alongside the Karpathy four per [ADR-016](adrs/ADR-016-mise-en-place-principle-5.md); landed in the contract at v0.5.0 (Section 5). Forward application: articulate the why-chain before substantive work, with five iterations as the floor for non-trivial work. Backward application: apply five whys to failures, refusing "human error" as a terminal explanation. Posture: blame the system, never the operator. Mode-specific overrides — `firefight` defers (postmortem-only), `explore` relaxes, `harden`/`ship`/`migrate` strengthen, `review` requires one iteration of why per finding (interlocks with the multi-agent face-off — reviewer findings must articulate a why; operator's "act on finding" default reconciles disagreement via why-chain analysis, not by picking a reviewer). Authoritative text: mise-en-place v0.5.0 `skills/mise-en-place/references/contract.md` Section 5. Architectural commitment: [ADR-016](adrs/ADR-016-mise-en-place-principle-5.md). Lineage: Amazon Well-Architected Five Whys, Mirepoix-augmented (fork-shaped per ADR-014 Generic Domain principle).
 - **The eight operating modes**: `build`, `explore`, `harden`, `ship`, `firefight`, `review`, `migrate`, `refactor` (mise-en-place enumeration).
 - **`codex-result-handling` skill rule** — never auto-apply Codex review findings; present verbatim and ask the operator which (if any) to address.
 - **Multi-agent face-off as runtime** — dispatch + reconciliation code in `codex-plugin-cc` and on-loop orchestrator. The methodological form lives in Pipeline.
@@ -375,6 +377,7 @@ Resolution IDs (`R1`–`R17` from the 2026-05-16 bootstrap session) are append-o
 - [ADR-010](adrs/ADR-010-mirepoix-secure-and-scotty-gpu-pilot.md) — Mirepoix-secure posture; Phase a / Phase b vocabulary.
 - [ADR-012](adrs/ADR-012-two-venue-deployment-model.md) — two-venue deployment model (Deployment boundary).
 - [ADR-013](adrs/ADR-013-codex-as-teammate.md) — Codex teammate (Pipeline / Tooling / Deployment intersection).
+- [ADR-016](adrs/ADR-016-mise-en-place-principle-5.md) — Justified Action / Five Whys as mise-en-place Principle 5 (Tooling-context foundational vocabulary).
 - [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) — Phase Zero–Six roadmap (Harness macro-phases).
 - [CLAUDE.md](CLAUDE.md) — agent-loaded conventions covering all four contexts.
 - [`docs/CODEX-TEAMMATE-RUNBOOK.md`](docs/CODEX-TEAMMATE-RUNBOOK.md) — Tooling / Pipeline operational guide.
