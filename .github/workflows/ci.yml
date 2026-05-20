@@ -34,12 +34,22 @@ jobs:
       - name: Type-check @mirepoix/core
         run: bun x tsc --noEmit -p packages/core/tsconfig.json
 
-      - name: Negative type-smoke — @mirepoix/core (unknown-tag.ts must fail tsc)
-        # Inverted exit: tsc MUST error on the bad event tags / payloads in
-        # unknown-tag.ts; a clean exit means the type constraints were relaxed
-        # and the negative test silently no longer enforces. See
-        # packages/core/type-smoke/unknown-tag.ts header.
-        run: "! bun x tsc --noEmit -p packages/core/type-smoke/tsconfig-negative.json"
+      - name: Negative type-smoke — @mirepoix/core (unknown-tag.ts must fail with expected diagnostics)
+        # Runner asserts BOTH (a) tsc exits non-zero AND (b) the listed
+        # diagnostic patterns appear in tsc output. A bare `! bun x tsc`
+        # would accept any non-zero exit, so a smoke that stops compiling
+        # for the wrong reason (renamed import, module-resolution break)
+        # would falsely report the type invariant as enforced.
+        # See Codex adversarial-review finding on PR #20 (2026-05-20),
+        # CLAUDE.md "Hard don'ts", and scripts/check-negative-smoke.sh.
+        run: |
+          bash scripts/check-negative-smoke.sh \
+            packages/core/type-smoke/tsconfig-negative.json \
+            'unknown-tag\.ts.*TS2345' \
+            'session:start--invalid' \
+            'dispatchId' \
+            'gateVerdict' \
+            'outcome'
 
       - name: Smoke test — @mirepoix/ai surface
         run: |
@@ -63,12 +73,16 @@ jobs:
       - name: Type-check @mirepoix/cli
         run: bun x tsc --noEmit -p packages/cli/tsconfig.json
 
-      - name: Negative type-smoke — @mirepoix/cli (run-options-missing-wd.ts must fail tsc)
-        # Inverted exit: tsc MUST error on the RunOptions call omitting
-        # workingDir / systemPromptFile; a clean exit means those fields became
-        # optional and NQ-7 / FR-013-3 / OQ-4 are no longer enforced at the
-        # type layer. See packages/cli/type-smoke/run-options-missing-wd.ts.
-        run: "! bun x tsc --noEmit -p packages/cli/type-smoke/tsconfig-negative.json"
+      - name: Negative type-smoke — @mirepoix/cli (run-options-missing-wd.ts must fail with expected diagnostics)
+        # Runner asserts BOTH (a) tsc exits non-zero AND (b) the listed
+        # diagnostic patterns appear in tsc output. See the core-side step
+        # above + Codex adversarial-review finding on PR #20 (2026-05-20).
+        run: |
+          bash scripts/check-negative-smoke.sh \
+            packages/cli/type-smoke/tsconfig-negative.json \
+            'run-options-missing-wd\.ts.*TS2345' \
+            'workingDir' \
+            'systemPromptFile'
 
       - name: Smoke test — @mirepoix/cli surface
         run: |
