@@ -1,0 +1,18 @@
+{
+  "name": "@mirepoix/acp",
+  "version": "0.1.0",
+  "description": "Mirepoix ACP (Agent Client Protocol) server. Exposes the Mirepoix agent loop over ACP so any ACP-compatible client (Zed, JetBrains, future TUI) can drive it. Per the methodology-pluggable distribution thesis.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "bin": {
+    "mirepoix-acp": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.22.1",
+    "@mirepoix/ai": "workspace:*",
+    "@mirepoix/coding": "workspace:*",
+    "@mirepoix/core": "workspace:*"
+  }
+}
