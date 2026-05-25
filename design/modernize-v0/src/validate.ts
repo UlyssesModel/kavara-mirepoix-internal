@@ -6,12 +6,7 @@
 // Generalizes the Kirk-precursor demo's 10-decimal-match validation to any
 // language pair + arbitrary output types.
 
-import type {
-  TestCase,
-  TestResult,
-  ValidationRequest,
-  ValidationResult,
-} from "./types";
+import type { TestCase, TestResult, ValidationRequest, ValidationResult } from "./types";
 
 /** Configuration for the validation run. */
 export interface ValidateConfig {

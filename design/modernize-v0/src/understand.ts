@@ -6,11 +6,7 @@
 // parallel sub-sessions. Same input → same output schema → same dashboard
 // renders the result.
 
-import type {
-  KnowledgeGraph,
-  Language,
-  PerModuleSummary,
-} from "./types";
+import type { KnowledgeGraph, Language, PerModuleSummary } from "./types";
 
 /** Configuration for an Understand run. */
 export interface UnderstandConfig {
@@ -95,8 +91,6 @@ export function extractPerModuleSummaries(graph: KnowledgeGraph): PerModuleSumma
  * @mirepoix/modernize orchestrator at engagement end to produce the target-
  * language knowledge graph delivered to the customer.
  */
-export async function runUnderstandOnModernized(
-  config: UnderstandConfig,
-): Promise<KnowledgeGraph> {
+export async function runUnderstandOnModernized(config: UnderstandConfig): Promise<KnowledgeGraph> {
   return runUnderstand(config);
 }

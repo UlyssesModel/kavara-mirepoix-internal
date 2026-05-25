@@ -26,7 +26,16 @@ export interface GraphNode {
 export interface GraphEdge {
   from: string;
   to: string;
-  type: "imports" | "calls" | "contains" | "depends_on" | "configures" | "documents" | "triggers" | "exports" | "related";
+  type:
+    | "imports"
+    | "calls"
+    | "contains"
+    | "depends_on"
+    | "configures"
+    | "documents"
+    | "triggers"
+    | "exports"
+    | "related";
 }
 
 /** Architectural layer aggregation. */

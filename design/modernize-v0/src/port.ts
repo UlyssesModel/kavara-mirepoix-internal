@@ -7,11 +7,7 @@
 // Extends today's Kirk-precursor demo pattern (PyTorch MLP → Rust port with
 // 10-decimal-match validation) to arbitrary language pairs.
 
-import type {
-  PortRequest,
-  PortResult,
-  FaceOffVerdict,
-} from "./types";
+import type { PortRequest, PortResult, FaceOffVerdict } from "./types";
 
 /** Configuration for the port operation. */
 export interface PortConfig {
@@ -62,10 +58,7 @@ export interface PortConfig {
  * @returns PortResult with success flag, output path, dependencies extracted,
  *          audit log, and all face-off verdicts.
  */
-export async function portModule(
-  request: PortRequest,
-  config: PortConfig,
-): Promise<PortResult> {
+export async function portModule(request: PortRequest, config: PortConfig): Promise<PortResult> {
   // IMPLEMENTATION:
   //   const sourceCode = await readFile(request.sourceFile);
   //   let retries = 0;

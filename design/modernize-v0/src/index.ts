@@ -13,7 +13,13 @@
 
 export { runUnderstand, extractPerModuleSummaries, runUnderstandOnModernized } from "./understand";
 export { portModule, buildPortPrompt, runFaceOff } from "./port";
-export { validateEquivalence, synthesizeTestCorpus, generateRunner, executeInSandbox, compareOutputs } from "./validate";
+export {
+  validateEquivalence,
+  synthesizeTestCorpus,
+  generateRunner,
+  executeInSandbox,
+  compareOutputs,
+} from "./validate";
 export type * from "./types";
 
 import { runUnderstand, extractPerModuleSummaries, runUnderstandOnModernized } from "./understand";
@@ -85,7 +91,7 @@ export async function runModernizationEngagement(
     if (!summary) continue;
 
     // Step 2a: Port
-    let port: PortResult = await portModule(
+    const port: PortResult = await portModule(
       {
         sourceFile: summary.path,
         sourceLanguage: summary.language,
@@ -107,7 +113,7 @@ export async function runModernizationEngagement(
     );
 
     // Step 2b: Validate
-    let validate: ValidationResult = await validateEquivalence(
+    const validate: ValidationResult = await validateEquivalence(
       {
         sourceFile: summary.path,
         portedFile: port.portedFile,
@@ -200,15 +206,11 @@ async function fetchAttestationReport(endpoint: string): Promise<string> {
 if (import.meta.main) {
   const configPath = process.argv[2];
   if (!configPath) {
-    process.stderr.write(
-      "usage: mirepoix-modernize <engagement-config.json>\n",
-    );
+    process.stderr.write("usage: mirepoix-modernize <engagement-config.json>\n");
     process.exit(1);
   }
 
-  const config: EngagementConfig = JSON.parse(
-    await Bun.file(configPath).text(),
-  );
+  const config: EngagementConfig = JSON.parse(await Bun.file(configPath).text());
 
   const result = await runModernizationEngagement(config);
 
