@@ -40,3 +40,6 @@ pnpm-debug.log*
 node_modules/
 packages/*/dist/
 *.tsbuildinfo
+
+# Understand-Anything output (knowledge graph + intermediate files)
+.understand-anything/
