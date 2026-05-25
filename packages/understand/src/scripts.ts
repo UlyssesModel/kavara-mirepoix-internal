@@ -87,6 +87,97 @@ export function resolveUpstreamSkillsDir(): string {
 }
 
 // =============================================================================
+// Upstream build prerequisite
+// =============================================================================
+
+/**
+ * Ensure the upstream Understand-Anything workspace's `@understand-anything/core`
+ * package is built. Idempotent.
+ *
+ * Why this exists: the plugin's deterministic .mjs scripts each import
+ * `@understand-anything/core`, falling back to
+ * `<pluginRoot>/packages/core/dist/index.js`. That dist file is a build artifact
+ * (gitignored upstream), so a fresh plugin install has it missing. Claude Code's
+ * `/understand` command runs `pnpm install` against the workspace before invoking
+ * the skill, which builds it via the workspace's `prepare` script. When we invoke
+ * the .mjs scripts directly (outside Claude Code), we have to satisfy that
+ * prerequisite ourselves.
+ *
+ * First-run cost: ~30-90s (depends on pnpm cache state).
+ * Subsequent runs: one `existsSync` (~µs).
+ *
+ * Mutation safety: uses `--frozen-lockfile` so the plugin's committed
+ * `pnpm-lock.yaml` is never modified — Claude Code's next plugin update will
+ * remain a clean overwrite.
+ *
+ * Build mode: this currently does NOT enable native build scripts for
+ * tree-sitter parsers (the `allowBuilds: true` workaround documented in the
+ * `reference_understand_anything_setup_on_kavara_builder` memory). The upstream
+ * extract-import-map.mjs is resilient to tree-sitter init failure — it emits
+ * empty `importMap` entries with a stderr warning rather than aborting — so
+ * v0 still produces valid output for downstream phases. Enabling native
+ * tree-sitter builds is tracked as a follow-up.
+ *
+ * @throws if pnpm isn't on PATH or the build fails.
+ */
+export async function ensureUpstreamBuilt(): Promise<void> {
+  const skillsDir = resolveUpstreamSkillsDir();
+  // pluginRoot is two dirs up from skills/understand/.
+  const pluginRoot = resolve(skillsDir, "..", "..");
+  const coreDistEntry = resolve(pluginRoot, "packages/core/dist/index.js");
+  // The .mjs scripts also need the plugin's registry deps (graphology etc.)
+  // present at <pluginRoot>/node_modules/. Checking core's dist alone is
+  // insufficient — a prior install scoped to @understand-anything/core only
+  // would build core but leave the plugin's node_modules empty, and the
+  // existsSync(coreDistEntry) early-return would then mask the missing deps.
+  // graphology is the canonical sentinel since its absence is the failure
+  // mode that motivated this check (see the iteration-2 fix below).
+  const graphologyEntry = resolve(pluginRoot, "node_modules/graphology/package.json");
+
+  if (existsSync(coreDistEntry) && existsSync(graphologyEntry)) return;
+
+  // Workspace root is one level up from the plugin (per the outer
+  // pnpm-workspace.yaml that declares `understand-anything-plugin/packages/*`).
+  const workspaceRoot = resolve(pluginRoot, "..");
+  const workspaceFile = resolve(workspaceRoot, "pnpm-workspace.yaml");
+  if (!existsSync(workspaceFile)) {
+    throw new Error(
+      `@mirepoix/understand: expected pnpm-workspace.yaml at ${workspaceFile} ` +
+        "(one level up from the plugin root). The upstream layout may have changed; " +
+        "review ensureUpstreamBuilt in scripts.ts.",
+    );
+  }
+
+  // 1. Install workspace deps for understand-anything-plugin and its transitive
+  //    workspaces. The plugin's .mjs scripts (compute-batches.mjs, etc.) use
+  //    registry deps declared on understand-anything-plugin/package.json
+  //    (graphology, graphology-communities-louvain), NOT on @understand-anything/core.
+  //    Filtering on the plugin via path (`./understand-anything-plugin...`)
+  //    pulls in both: the plugin's own deps AND core (a workspace dep of the
+  //    plugin). `...` includes deps; `--frozen-lockfile` refuses lockfile edits.
+  await execFileAsync(
+    "pnpm",
+    ["install", "--filter", "./understand-anything-plugin...", "--frozen-lockfile"],
+    { cwd: workspaceRoot },
+  );
+
+  // 2. Build @understand-anything/core explicitly. The workspace's `prepare`
+  //    script runs this on install too, but invoking it directly is a safety
+  //    belt against `prepare` being skipped in some pnpm configurations.
+  await execFileAsync("pnpm", ["--filter", "@understand-anything/core", "build"], {
+    cwd: workspaceRoot,
+  });
+
+  if (!existsSync(coreDistEntry)) {
+    throw new Error(
+      `@mirepoix/understand: built @understand-anything/core but expected artifact ` +
+        `missing at ${coreDistEntry}. pnpm install + build completed without producing ` +
+        "the dist file. Check pnpm output for warnings.",
+    );
+  }
+}
+
+// =============================================================================
 // Typed result shapes — mirror the JSON written by each upstream script
 // =============================================================================
 
@@ -134,6 +225,23 @@ export interface ExtractStructureResult {
   results: unknown[];
 }
 
+/** Per-batch entry inside compute-batches output. */
+export interface BatchEntry {
+  batchIndex: number;
+  files: ScannedFile[];
+  mergeable: boolean;
+}
+
+/** compute-batches.mjs output. The shape is intentionally open beyond the
+ *  known fields — upstream emits additional metadata (algorithm choice,
+ *  neighborMap, non-code groups, etc.) that the orchestrator does not need
+ *  to type fully for v0. */
+export interface BatchesResult {
+  batches: BatchEntry[];
+  neighborMap?: Record<string, string[]>;
+  [key: string]: unknown;
+}
+
 // =============================================================================
 // Wrappers
 // =============================================================================
@@ -143,6 +251,7 @@ export interface ExtractStructureResult {
  * Equivalent to: `node scan-project.mjs <projectRoot> <outputPath>`.
  */
 export async function runScanProject(projectRoot: string): Promise<ScanProjectResult> {
+  await ensureUpstreamBuilt();
   const script = join(resolveUpstreamSkillsDir(), "scan-project.mjs");
   return withTmpOutput<ScanProjectResult>(async (outputPath) => {
     await execFileAsync("node", [script, projectRoot, outputPath]);
@@ -161,6 +270,7 @@ export async function runExtractImportMap(
   projectRoot: string,
   files: ScannedFile[],
 ): Promise<ImportMapResult> {
+  await ensureUpstreamBuilt();
   const script = join(resolveUpstreamSkillsDir(), "extract-import-map.mjs");
   return withTmpInputOutput<ImportMapResult>(
     { projectRoot, files },
@@ -189,6 +299,7 @@ export async function runExtractStructure(
   batchFiles: ScannedFile[],
   batchImportData: Record<string, unknown>,
 ): Promise<ExtractStructureResult> {
+  await ensureUpstreamBuilt();
   const script = join(resolveUpstreamSkillsDir(), "extract-structure.mjs");
   return withTmpInputOutput<ExtractStructureResult>(
     { projectRoot, batchFiles, batchImportData },
@@ -197,6 +308,59 @@ export async function runExtractStructure(
       return JSON.parse(readFileSync(outputPath, "utf8")) as ExtractStructureResult;
     },
   );
+}
+
+/**
+ * Run compute-batches.mjs.
+ *
+ * Precondition: `<projectRoot>/.understand-anything/intermediate/scan-result.json`
+ * must exist and contain at minimum `{ files: ScannedFile[], importMap: Record<string, string[]> }`.
+ * compute-batches reads only those two fields (per its main() at lines 338-341);
+ * the orchestrator can omit the LLM-narrative fields without affecting batching.
+ *
+ * Writes `<projectRoot>/.understand-anything/intermediate/batches.json` and
+ * returns its parsed contents.
+ *
+ * Equivalent to: `node compute-batches.mjs <projectRoot> [--changed-files=<path>]`.
+ */
+export async function runComputeBatches(
+  projectRoot: string,
+  options?: { changedFiles?: string },
+): Promise<BatchesResult> {
+  await ensureUpstreamBuilt();
+  const script = join(resolveUpstreamSkillsDir(), "compute-batches.mjs");
+  const args = [script, projectRoot];
+  if (options?.changedFiles) args.push(`--changed-files=${options.changedFiles}`);
+  await execFileAsync("node", args);
+  const outPath = join(projectRoot, ".understand-anything", "intermediate", "batches.json");
+  return JSON.parse(readFileSync(outPath, "utf8")) as BatchesResult;
+}
+
+/**
+ * Run build-fingerprints.mjs.
+ *
+ * Writes `<projectRoot>/.understand-anything/fingerprints.json`, used by
+ * upstream's auto-update path for incremental change detection. Has no
+ * separate output JSON, so we hand-roll the tmp-input pattern here (the
+ * `withTmpInputOutput` helper assumes both files exist).
+ *
+ * Equivalent to: `node build-fingerprints.mjs <input.json>`.
+ */
+export async function runBuildFingerprints(
+  projectRoot: string,
+  sourceFilePaths: string[],
+  gitCommitHash: string,
+): Promise<void> {
+  await ensureUpstreamBuilt();
+  const script = join(resolveUpstreamSkillsDir(), "build-fingerprints.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "mirepoix-understand-"));
+  const inputPath = join(dir, "in.json");
+  try {
+    writeFileSync(inputPath, JSON.stringify({ projectRoot, sourceFilePaths, gitCommitHash }));
+    await execFileAsync("node", [script, inputPath]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // =============================================================================
