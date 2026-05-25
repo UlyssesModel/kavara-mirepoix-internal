@@ -56,6 +56,19 @@
         "mirepoix-tui": "./src/index.ts",
       },
     },
+    "packages/understand": {
+      "name": "@mirepoix/understand",
+      "version": "0.0.1",
+      "bin": {
+        "mirepoix-understand": "./src/index.ts",
+      },
+      "dependencies": {
+        "@mirepoix/acp": "workspace:*",
+        "@mirepoix/ai": "workspace:*",
+        "@mirepoix/coding": "workspace:*",
+        "@mirepoix/core": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.22.1", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-DfqXtl/8gO9NImq094MTaCXEU2vkhh6v7q/kT+9UjZxUqj8hYaya2OjLVIqn16MzNHcXEpShTR2RIauLSYeDQQ=="],
@@ -89,6 +102,8 @@
     "@mirepoix/core": ["@mirepoix/core@workspace:packages/core"],
 
     "@mirepoix/tui": ["@mirepoix/tui@workspace:packages/tui"],
+
+    "@mirepoix/understand": ["@mirepoix/understand@workspace:packages/understand"],
 
     "@types/node": ["@types/node@22.19.19", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew=="],
 
