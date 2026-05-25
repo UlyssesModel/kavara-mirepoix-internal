@@ -114,26 +114,12 @@ export async function runFaceOffReview(
   progress(`[face-off-review] dispatching ${V0_REVIEWERS.length} reviewers in parallel`);
 
   // N=2, unbounded Promise.all is fine — the bounded-concurrency semaphore
-  // in concurrency.ts is for batches in the dozens.
+  // in concurrency.ts is for batches in the dozens. `runOneReviewer` never
+  // throws — it catches its own failures and returns a synthetic BLOCK
+  // FaceOffVerdict carrying the real session id + elapsed time when a
+  // session was opened. The audit trail always has exactly N=2 entries.
   const verdicts = await Promise.all(
-    V0_REVIEWERS.map((spec) =>
-      runOneReviewer(spec, brief, providerConfig, options, progress).catch((err) => {
-        // Per-reviewer failure: synthesize a BLOCK verdict so the audit
-        // trail always has 2 entries. The orchestrator does not auto-
-        // remediate on block, so this surfaces to the caller exactly like
-        // a successful BLOCK would.
-        const msg = err instanceof Error ? err.message : String(err);
-        progress(`[face-off-review] ${spec.label}: FAILED — ${msg.slice(0, 200)}`);
-        return {
-          reviewer: spec.id,
-          verdict: "block" as const,
-          notes: `Reviewer session failed: ${msg}`,
-          acpSessionId: "",
-          durationMs: 0,
-          timestamp: new Date().toISOString(),
-        };
-      }),
-    ),
+    V0_REVIEWERS.map((spec) => runOneReviewer(spec, brief, providerConfig, options, progress)),
   );
 
   for (const v of verdicts) {
@@ -143,6 +129,19 @@ export async function runFaceOffReview(
   return verdicts;
 }
 
+/**
+ * Drive one reviewer session end-to-end. NEVER throws — on any failure,
+ * returns a synthetic BLOCK FaceOffVerdict carrying the real `acpSessionId`
+ * and `durationMs` accumulated up to the failure point. Audit-trail
+ * cardinality (always N=2) is preserved without losing trace data.
+ *
+ * Why this matters: a failure that occurs after a session was opened still
+ * has a real session id worth tracing into the @mirepoix/acp logs, and the
+ * elapsed wall-clock is signal (a 600s timeout looks different from a 10ms
+ * spawn failure). A previous version of this function let errors propagate
+ * to the outer `Promise.all` catch, which synthesized `acpSessionId: ""` +
+ * `durationMs: 0` — surfaced as Codex adversarial-review finding on Commit 8.
+ */
 async function runOneReviewer(
   spec: ReviewerSpec,
   brief: string,
@@ -166,8 +165,8 @@ async function runOneReviewer(
   };
   const client = new AcpClient(acpOpts);
   let sessionId = "";
-  let parsed: { verdict: "approve" | "block"; notes: string };
-  let rawText = "";
+  let failure: Error | null = null;
+  let parsed: { verdict: "approve" | "block"; notes: string } | null = null;
   try {
     await client.initialize();
     sessionId = await client.newSession(sessionCwd);
@@ -177,7 +176,7 @@ async function runOneReviewer(
         `face-off-review[${spec.id}]: stopReason="${result.stopReason}" (expected "end_turn")`,
       );
     }
-    rawText = result.text;
+    const rawText = result.text;
     if (!rawText.trim()) {
       throw new Error(`face-off-review[${spec.id}]: LLM returned empty response`);
     }
@@ -193,6 +192,8 @@ async function runOneReviewer(
       );
     }
     parsed = parseVerdict(rawText, spec.id);
+  } catch (err) {
+    failure = err instanceof Error ? err : new Error(String(err));
   } finally {
     await client.shutdown().catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -205,21 +206,52 @@ async function runOneReviewer(
     }
   }
 
+  const durationMs = Date.now() - t0;
+  if (failure) {
+    progress(`[face-off-review] ${spec.label}: FAILED — ${failure.message.slice(0, 200)}`);
+    const noteHead = sessionId
+      ? `Reviewer session ${sessionId} failed after ${durationMs}ms`
+      : "Reviewer failed before an ACP session was established";
+    return {
+      reviewer: spec.id,
+      verdict: "block",
+      notes: `${noteHead}: ${failure.message}`,
+      acpSessionId: sessionId,
+      durationMs,
+      timestamp,
+    };
+  }
+
+  // parsed is non-null here: the only paths that skip parsing throw into
+  // `failure`. Defensive guard satisfies the type system without a !.
+  if (!parsed) {
+    return {
+      reviewer: spec.id,
+      verdict: "block",
+      notes: `Reviewer ${spec.id} completed without producing a parsed verdict — invariant violation`,
+      acpSessionId: sessionId,
+      durationMs,
+      timestamp,
+    };
+  }
   return {
     reviewer: spec.id,
     verdict: parsed.verdict,
     notes: parsed.notes,
     acpSessionId: sessionId,
-    durationMs: Date.now() - t0,
+    durationMs,
     timestamp,
   };
 }
 
 /**
  * Parse the reviewer's JSON response. Tolerates leading/trailing prose around
- * a single JSON object with `verdict` + `notes`. Defaults `notes` to the raw
- * text if the reviewer emitted free-form prose around the verdict (we still
- * want the verbatim notes — never silently drop them).
+ * a single JSON object with `verdict` + `notes`. Fails CLOSED to BLOCK on any
+ * malformed input — never collapses unparseable output to APPROVE. The
+ * verbatim raw text is preserved in `notes` so the audit trail surfaces the
+ * anomaly. Originated as Codex adversarial-review finding on Commit 8: an
+ * adversarial reviewer emitting truncated JSON or a misspelled `verdict`
+ * field would otherwise be recorded as approval.
  */
 function parseVerdict(
   text: string,
@@ -227,30 +259,60 @@ function parseVerdict(
 ): { verdict: "approve" | "block"; notes: string } {
   const json = extractJsonObject(text);
   if (!json) {
-    // Free-form response — heuristic: look for "APPROVE" or "BLOCK" at the
-    // top of the text. Preserve the full raw response as notes.
+    // No top-level JSON object recoverable. Free-form responses from the
+    // reviewer can still carry a clear verdict word at the top of the text;
+    // accept "approve" / "approved" only when no contradicting "block" /
+    // "request_changes" / "reject" appears in the same head. Anything else
+    // (including silent return) defaults to BLOCK and ships the raw text.
     const head = text.slice(0, 200).toLowerCase();
-    const verdict = head.includes("block") && !head.includes("approve") ? "block" : "approve";
+    const blocks = /\b(block|request[_ ]changes|reject)\b/.test(head);
+    const approves = /\b(approve|approved)\b/.test(head);
+    const verdict: "approve" | "block" = approves && !blocks ? "approve" : "block";
     return { verdict, notes: text.trim() };
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
   } catch (err) {
-    throw new Error(
-      `face-off-review[${reviewerId}]: JSON.parse failed ` +
-        `(${(err as Error).message}). Extracted: ${json.slice(0, 300)}`,
-    );
+    // JSON extraction succeeded but parse failed (e.g. truncated). Fail
+    // closed; the raw extracted JSON is captured in notes for triage.
+    return {
+      verdict: "block",
+      notes:
+        `face-off-review[${reviewerId}]: JSON.parse failed ` +
+        `(${(err as Error).message}). Raw extracted JSON:\n${json}`,
+    };
   }
   if (typeof parsed !== "object" || parsed === null) {
-    throw new Error(`face-off-review[${reviewerId}]: parsed JSON is not an object`);
+    return {
+      verdict: "block",
+      notes: `face-off-review[${reviewerId}]: parsed JSON is not an object. Raw text:\n${text}`,
+    };
   }
   const obj = parsed as Record<string, unknown>;
+  // Accept ONLY exact, case-insensitive matches of the canonical verdict
+  // vocabulary. Anything else (missing, misspelled, foreign-language) is a
+  // BLOCK with the parsed object surfaced in notes so the operator sees the
+  // raw output.
   const rawVerdict = typeof obj.verdict === "string" ? obj.verdict.toLowerCase().trim() : "";
-  const verdict: "approve" | "block" =
-    rawVerdict === "block" || rawVerdict === "request_changes" || rawVerdict === "reject"
-      ? "block"
-      : "approve";
+  let verdict: "approve" | "block";
+  if (rawVerdict === "approve" || rawVerdict === "approved") {
+    verdict = "approve";
+  } else if (
+    rawVerdict === "block" ||
+    rawVerdict === "request_changes" ||
+    rawVerdict === "reject"
+  ) {
+    verdict = "block";
+  } else {
+    // Unknown / missing verdict — fail closed.
+    return {
+      verdict: "block",
+      notes:
+        `face-off-review[${reviewerId}]: parsed JSON has unrecognized verdict ` +
+        `"${rawVerdict || "(missing)"}". Raw text:\n${text}`,
+    };
+  }
   const notes = typeof obj.notes === "string" && obj.notes.trim() ? obj.notes.trim() : text.trim();
   return { verdict, notes };
 }

@@ -25,8 +25,16 @@
 //
 // Contract invariants (validated before emit; thrown on violation):
 //   - Every file path in any `layer.fileIds` resolves to an emitted file node.
-//   - Every layer in `layers` appears in exactly one `domain.layerIds`.
-//   - Every file path appears in at most one `layer.fileIds` (uniqueness).
+//   - Every file in `scan.files` appears in EXACTLY ONE `layer.fileIds`
+//     (coverage + uniqueness). Catches an upstream-normalizer regression
+//     where the catch-all sweep into `layer:shared` stopped working.
+//   - Every layer in `layers` appears in EXACTLY ONE `domain.layerIds`
+//     (coverage + uniqueness). Same shape for the domain catch-all.
+//   - Every emitted `domain.fileIds` equals the union of its member layers'
+//     fileIds — domain file membership is derived, never independent. The
+//     domain-analyzer computes this deterministically; the assembler
+//     recomputes and asserts so a hand-edited domains.json can't ship
+//     contradicting data.
 //   - Every edge endpoint references a node in the emitted node set.
 //
 // Upstream architecture-analyzer and domain-analyzer already enforce the
@@ -142,14 +150,37 @@ export function assembleKnowledgeGraph(
   }
 
   // Backfill `node.layer` for every file node now that the map is built.
+  // Enforce the coverage half of the file-in-exactly-one-layer invariant:
+  // every scanned file MUST have a layer assignment. The architecture-
+  // analyzer's normalizer sweeps unassigned files into `layer:shared` as a
+  // catch-all, so this should hold. If it doesn't, the upstream normalizer
+  // regressed and we surface that as a fatal here rather than as silent
+  // "file nodes with no layer" in the emitted graph.
+  const unassignedFilePaths: string[] = [];
   for (const node of nodes) {
     if (node.type !== "file") continue;
     const layerId = pathToLayerId.get(node.path);
-    if (layerId) node.layer = layerId;
+    if (layerId) {
+      node.layer = layerId;
+    } else {
+      unassignedFilePaths.push(node.path);
+    }
+  }
+  if (unassignedFilePaths.length > 0) {
+    const preview = unassignedFilePaths.slice(0, 5).join(", ");
+    const more =
+      unassignedFilePaths.length > 5 ? `, … (+${unassignedFilePaths.length - 5} more)` : "";
+    throw new Error(
+      `assembleKnowledgeGraph: ${unassignedFilePaths.length} file(s) not assigned to ` +
+        `any layer (${preview}${more}). Upstream architecture-analyzer's ` +
+        "catch-all sweep into layer:shared regressed.",
+    );
   }
 
   // ── 3. Build the domain → layer lookup. Every layer MUST be in exactly
-  //      one domain's layerIds. Surface drift.
+  //      one domain's layerIds. Surface drift on uniqueness (a layer in
+  //      two domains) AND on coverage (a layer in no domain — the domain-
+  //      analyzer's catch-all sweep into `domain:shared` regressed).
   const layerIdSet = new Set(layers.map((l) => l.id));
   const layerToDomainId = new Map<string, string>();
   for (const domain of domains) {
@@ -169,6 +200,19 @@ export function assembleKnowledgeGraph(
       }
       layerToDomainId.set(layerId, domain.id);
     }
+  }
+  const unassignedLayerIds: string[] = [];
+  for (const layer of layers) {
+    if (!layerToDomainId.has(layer.id)) {
+      unassignedLayerIds.push(layer.id);
+    }
+  }
+  if (unassignedLayerIds.length > 0) {
+    throw new Error(
+      `assembleKnowledgeGraph: ${unassignedLayerIds.length} layer(s) not assigned ` +
+        `to any domain (${unassignedLayerIds.join(", ")}). Upstream ` +
+        "domain-analyzer's catch-all sweep into domain:shared regressed.",
+    );
   }
 
   // ── 4. Emit function + class derived nodes from per-file analyses. Only
@@ -275,19 +319,49 @@ export function assembleKnowledgeGraph(
     }),
   }));
 
-  const normalizedDomains: BusinessDomain[] = domains.map((domain) => ({
-    ...domain,
-    fileIds: domain.fileIds.map((p) => {
-      const nid = filePathToNodeId.get(p);
-      if (!nid) {
-        throw new Error(
-          `assembleKnowledgeGraph: domain "${domain.id}" fileIds path "${p}" lost ` +
-            "during node-id translation — assembler invariant violation.",
-        );
+  // Index layers by id for the domain-fileIds recomputation below.
+  const layerById = new Map<string, ArchitecturalLayer>();
+  for (const layer of layers) layerById.set(layer.id, layer);
+
+  const normalizedDomains: BusinessDomain[] = domains.map((domain) => {
+    // Recompute fileIds as the union of member layers' fileIds, in stable
+    // member-layer order. The domain-analyzer computes this deterministically
+    // upstream; we recompute here so a hand-edited domains.json carrying a
+    // contradicting fileIds list can't ship as the authoritative answer.
+    const computed: string[] = [];
+    const seenPath = new Set<string>();
+    for (const layerId of domain.layerIds) {
+      const layer = layerById.get(layerId);
+      if (!layer) continue; // already asserted above; defensive
+      for (const path of layer.fileIds) {
+        if (seenPath.has(path)) continue;
+        seenPath.add(path);
+        computed.push(path);
       }
-      return nid;
-    }),
-  }));
+    }
+    const expectedCount = computed.length;
+    const actualCount = new Set(domain.fileIds).size;
+    if (actualCount !== expectedCount) {
+      throw new Error(
+        `assembleKnowledgeGraph: domain "${domain.id}" fileIds count (${actualCount}) ` +
+          `disagrees with the union of its member layers (${expectedCount}). ` +
+          "domain.fileIds must equal the deterministic union of `domain.layerIds[*].fileIds`.",
+      );
+    }
+    return {
+      ...domain,
+      fileIds: computed.map((p) => {
+        const nid = filePathToNodeId.get(p);
+        if (!nid) {
+          throw new Error(
+            `assembleKnowledgeGraph: domain "${domain.id}" derived path "${p}" ` +
+              "has no file node — assembler invariant violation.",
+          );
+        }
+        return nid;
+      }),
+    };
+  });
 
   // ── 8. Project metadata.
   const project = {
