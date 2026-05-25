@@ -1,0 +1,13 @@
+{
+  "name": "@mirepoix/tui",
+  "version": "0.1.0",
+  "description": "Mirepoix terminal UI — ACP client that renders streaming agent sessions. v0.0.1: single-session viewer. Future: manager view with multiple concurrent sessions, face-off pair visualization, JSONL replay.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "bin": {
+    "mirepoix-tui": "./src/index.ts"
+  },
+  "dependencies": {}
+}
