@@ -17,8 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const ACP_ENTRY = process.env.MIREPOIX_ACP_ENTRY ??
-  resolve(__dirname, "../../acp/src/index.ts");
+const ACP_ENTRY = process.env.MIREPOIX_ACP_ENTRY ?? resolve(__dirname, "../../acp/src/index.ts");
 
 const COLORS = {
   reset: "\x1b[0m",
@@ -101,7 +100,7 @@ class AcpClient {
       case "tool_call": {
         process.stdout.write(
           `\n${c("cyan", `┌─ tool_call [${update.toolCallId}] ${c("bold", update.title)}`)}\n` +
-          `${c("cyan", "│  ")}${c("dim", JSON.stringify(update.rawInput))}\n`,
+            `${c("cyan", "│  ")}${c("dim", JSON.stringify(update.rawInput))}\n`,
         );
         break;
       }
@@ -113,11 +112,8 @@ class AcpClient {
           in_progress: "yellow",
         };
         const color = colorMap[status] ?? "gray";
-        const summary =
-          update.content?.[0]?.content?.text ?? `(status: ${status})`;
-        process.stdout.write(
-          `${c(color, `└─ ${status}: `)}${c("dim", summary.slice(0, 200))}\n`,
-        );
+        const summary = update.content?.[0]?.content?.text ?? `(status: ${status})`;
+        process.stdout.write(`${c(color, `└─ ${status}: `)}${c("dim", summary.slice(0, 200))}\n`);
         break;
       }
       case "plan":
@@ -182,8 +178,11 @@ async function main() {
     clientCapabilities: {},
   });
   console.log(
-    c("dim", `    protocolVersion=${init.protocolVersion} ` +
-      `capabilities=${JSON.stringify(init.agentCapabilities)}`),
+    c(
+      "dim",
+      `    protocolVersion=${init.protocolVersion} ` +
+        `capabilities=${JSON.stringify(init.agentCapabilities)}`,
+    ),
   );
 
   console.log(c("blue", "\n>>> session/new"));
