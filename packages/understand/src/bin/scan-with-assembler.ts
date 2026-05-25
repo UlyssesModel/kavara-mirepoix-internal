@@ -82,25 +82,30 @@ edges:             ${graph.edges.length}
 layers:            ${graph.layers.length}
 domains:           ${graph.domains.length}
 ---
-face-off review (${(result.faceOffElapsedMs / 1000).toFixed(1)}s parallel @ N=2):
+assemble face-off review (${(result.faceOffElapsedMs / 1000).toFixed(1)}s parallel @ N=2):
 `);
-  for (const v of graph.meta.faceOffVerdicts) {
+  for (const v of graph.meta.faceOffVerdicts.assemble) {
     process.stdout.write(
-      `  - ${v.reviewer.padEnd(20)} ${v.verdict.toUpperCase()} (${v.durationMs}ms, session=${v.acpSessionId || "n/a"})\n`,
+      `  - ${v.reviewer.padEnd(28)} ${v.verdict.toUpperCase()} (${v.durationMs}ms, session=${v.acpSessionId || "n/a"})\n`,
     );
   }
   process.stdout.write(`---
 output: ${result.graphPath}
 `);
 
-  // Smoke gate — Commit 8's success criteria from the handoff:
+  // Smoke gate — Commit 8's success criteria from the handoff (now applied to
+  // the `assemble` slice of the split-by-phase verdict shape introduced in
+  // Commit 9):
   //   1. Non-zero nodes / edges / layers / domains.
-  //   2. Exactly 2 face-off verdicts (claude-reviewer + codex-adversarial).
+  //   2. Exactly 2 assemble face-off verdicts (claude-reviewer + codex-adversarial).
   //   3. Both verdicts populated with non-empty notes.
+  //   4. `graph` slice is the empty array — this bin runs only the assemble
+  //      face-off; the graph face-off is the territory of scan-with-graph.
   //   Verdicts may be APPROVE + APPROVE, APPROVE + BLOCK, or BLOCK + BLOCK —
   //   all are acceptable v0 outcomes; the contract is "verdicts captured,"
   //   not "verdicts converged."
-  const verdicts = graph.meta.faceOffVerdicts;
+  const verdicts = graph.meta.faceOffVerdicts.assemble;
+  const graphVerdictsEmpty = graph.meta.faceOffVerdicts.graph.length === 0;
   const haveTwoVerdicts = verdicts.length === 2;
   const expectedReviewers = new Set(verdicts.map((v) => v.reviewer));
   const haveBothReviewers =
@@ -112,7 +117,8 @@ output: ${result.graphPath}
     graph.layers.length > 0 &&
     graph.domains.length > 0;
 
-  const ok = nonZero && haveTwoVerdicts && haveBothReviewers && allNotesPopulated;
+  const ok =
+    nonZero && haveTwoVerdicts && haveBothReviewers && allNotesPopulated && graphVerdictsEmpty;
 
   if (!ok) {
     process.stdout.write("\nsmoke gate FAILED:\n");
@@ -122,7 +128,7 @@ output: ${result.graphPath}
       );
     }
     if (!haveTwoVerdicts) {
-      process.stdout.write(`  expected 2 face-off verdicts, got ${verdicts.length}\n`);
+      process.stdout.write(`  expected 2 assemble face-off verdicts, got ${verdicts.length}\n`);
     }
     if (!haveBothReviewers) {
       process.stdout.write(
@@ -131,6 +137,11 @@ output: ${result.graphPath}
     }
     if (!allNotesPopulated) {
       process.stdout.write("  one or more verdicts has empty `notes` — audit trail incomplete\n");
+    }
+    if (!graphVerdictsEmpty) {
+      process.stdout.write(
+        `  graph face-off slice is not empty (got ${graph.meta.faceOffVerdicts.graph.length}) — scan-with-assembler should leave it untouched\n`,
+      );
     }
   }
   process.exit(ok ? 0 : 1);

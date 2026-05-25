@@ -89,10 +89,22 @@ export interface KnowledgeGraph {
     generatedAt: string;
     generatorVersion: string;
     schemaVersion: string;
-    /** In-product face-off review audit trail. Each entry is one reviewer's
-     *  verbatim verdict on the assembled graph (per ADR-013). v0 surfaces
-     *  verdicts to the caller; does not auto-remediate on block. */
-    faceOffVerdicts: FaceOffVerdict[];
+    /** In-product face-off review audit trail, split by pipeline phase so each
+     *  verdict is attributable to the artifact it was rendered on:
+     *    - `assemble`: verdicts from the assemble-reviewer pair (Commit 8),
+     *      rendered against the freshly-assembled graph BEFORE tour generation.
+     *      Targets contract / completeness defects in the assembly process.
+     *    - `graph`: verdicts from the graph-reviewer pair (Commit 9), rendered
+     *      against the FINAL graph-with-tour as customer-facing QA. Targets
+     *      representativeness defects — does this graph "make sense" as the
+     *      documentation a new engineer would read first?
+     *  Both arrays are populated each run; an empty inner array means the
+     *  corresponding face-off phase did not execute (deterministic earlier
+     *  pipelines like scan-with-assembler leave `graph: []`). */
+    faceOffVerdicts: {
+      assemble: FaceOffVerdict[];
+      graph: FaceOffVerdict[];
+    };
   };
 }
 
@@ -142,14 +154,22 @@ export interface PortResult {
 }
 
 /** Face-off review verdict from one reviewer. v0 audit-trail shape — recorded
- *  verbatim in KnowledgeGraph.meta.faceOffVerdicts[] when the in-product
- *  face-off review runs against the assembled graph (per ADR-013). The two
- *  canonical reviewer identities in v0 are "claude-reviewer" (completeness +
- *  contract enforcement) and "codex-adversarial" (failure-mode probing); the
- *  union widens to `string` because the reviewer roster grows over time
+ *  verbatim in KnowledgeGraph.meta.faceOffVerdicts when the in-product
+ *  face-off review runs against an artifact (per ADR-013). Reviewer rosters
+ *  in v0:
+ *    - Assemble-reviewer pair (Commit 8, against the assembled graph):
+ *      "claude-reviewer" + "codex-adversarial".
+ *    - Graph-reviewer pair (Commit 9, against the graph-with-tour):
+ *      "claude-graph-reviewer" + "codex-graph-adversarial".
+ *  The union widens to `string` because the reviewer roster grows over time
  *  ("codestral", "granite") without locking the audit-trail consumers. */
 export interface FaceOffVerdict {
-  reviewer: "claude-reviewer" | "codex-adversarial" | string;
+  reviewer:
+    | "claude-reviewer"
+    | "codex-adversarial"
+    | "claude-graph-reviewer"
+    | "codex-graph-adversarial"
+    | string;
   verdict: "approve" | "block";
   /** The reviewer's findings text, verbatim. Never paraphrased — operators
    *  audit the trail and need the raw output. */

@@ -37,8 +37,15 @@
 //   multi-reviewer validation goes from "applied to our dev workflow" to
 //   "baked into the product itself" per ADR-013.
 //
-// Subsequent commits will add the graph-reviewer face-off, tour-builder,
-// and the full runUnderstand() composition.
+//   scanWithGraph(projectRoot, providerConfig, options?) —
+//   scanWithAssembler + the tour-builder LLM phase + the second in-product
+//   face-off review (graph-reviewer pair, against the graph-with-tour).
+//   Rewrites knowledge-graph.json in place at the same path the assembler
+//   wrote, now carrying the populated tour + the `meta.faceOffVerdicts.graph`
+//   audit trail. This is the last LLM phase before Commit 10's runUnderstand()
+//   composition.
+//
+// Commit 10 will wire runUnderstand() as a thin composition over scanWithGraph.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -62,12 +69,14 @@ import {
   runFileAnalyzerOnBatch,
 } from "./llm/file-analyzer";
 import { runWithConcurrency, type SettledResult } from "./llm/concurrency";
+import { type RunGraphReviewerOptions, runGraphReviewer } from "./llm/graph-reviewer";
 import {
   type ProjectNarrative,
   type ProviderConfig,
   type RunProjectScannerOptions,
   runProjectScanner,
 } from "./llm/project-scanner";
+import { type RunTourBuilderOptions, type TourAnomalies, runTourBuilder } from "./llm/tour-builder";
 import type { ArchitecturalLayer, BusinessDomain, KnowledgeGraph } from "./types";
 import {
   type BatchesResult,
@@ -601,7 +610,7 @@ export async function scanWithAssembler(
     ...(options.faceOffOptions ?? {}),
   });
   const faceOffElapsedMs = Date.now() - tFaceOff0;
-  graph.meta.faceOffVerdicts = verdicts;
+  graph.meta.faceOffVerdicts.assemble = verdicts;
   progress(
     `[scanWithAssembler] face-off review done in ${(faceOffElapsedMs / 1000).toFixed(1)}s — ` +
       `${verdicts.length} verdict(s) recorded`,
@@ -618,5 +627,91 @@ export async function scanWithAssembler(
     graph,
     graphPath,
     faceOffElapsedMs,
+  };
+}
+
+export interface ScanWithGraphOptions extends ScanWithAssemblerOptions {
+  /** Per-call knobs for the tour-builder LLM phase. */
+  tourOptions?: RunTourBuilderOptions;
+  /** Per-call knobs for the graph-reviewer face-off phase. */
+  graphReviewerOptions?: RunGraphReviewerOptions;
+}
+
+/** Output of `scanWithGraph` — everything from scanWithAssembler plus the
+ *  tour-builder output and a second face-off verdict pair. */
+export interface ScanWithGraphResult extends ScanWithAssemblerResult {
+  /** Diagnostic anomalies from the tour-builder normalization. */
+  tourAnomalies: TourAnomalies;
+  /** Wall-clock for the tour-builder LLM call alone. */
+  tourElapsedMs: number;
+  /** Wall-clock for the parallel graph-reviewer face-off phase alone. */
+  graphFaceOffElapsedMs: number;
+}
+
+/**
+ * Run the full pipeline through tour-builder + graph-reviewer face-off.
+ *
+ * Behavior:
+ *   - Composes scanWithAssembler (which already runs the assemble-reviewer
+ *     face-off) and chains the Commit-9 phases on top.
+ *   - Tour-builder is a SINGLE @mirepoix/acp session over a candidate-hub
+ *     brief; produces ~12 ordered TourStep entries. Result is stamped onto
+ *     `graph.tour` BEFORE the graph-reviewer runs — the reviewers need to
+ *     see the tour as the final artifact's documentation.
+ *   - Graph-reviewer is a parallel pair of @mirepoix/acp sessions on the
+ *     graph-with-tour. Verdicts land in `graph.meta.faceOffVerdicts.graph`.
+ *   - Final knowledge-graph.json is rewritten in-place at the same path the
+ *     assembler wrote, so the on-disk artifact always has the latest tour +
+ *     verdict shape.
+ *
+ * V0 surfacing rules:
+ *   - Tour-builder failure throws (synthesis pass, no in-product retry yet).
+ *     The assembled graph + assemble verdicts already on disk remain valid;
+ *     a re-run can pick up from here once the failure is resolved.
+ *   - Graph-reviewer per-reviewer failure is downgraded to BLOCK (the shared
+ *     runOneReviewer dispatcher in face-off-reviewer.ts owns this); the audit
+ *     trail always has exactly 2 entries.
+ */
+export async function scanWithGraph(
+  projectRoot: string,
+  providerConfig: ProviderConfig,
+  options: ScanWithGraphOptions = {},
+): Promise<ScanWithGraphResult> {
+  const progress = options.onProgress ?? ((line: string) => process.stderr.write(`${line}\n`));
+  const phase4 = await scanWithAssembler(projectRoot, providerConfig, options);
+
+  progress("[scanWithGraph] running tour-builder over assembled graph");
+  const tTour0 = Date.now();
+  const tour = await runTourBuilder(phase4.graph, providerConfig, options.tourOptions);
+  const tourElapsedMs = Date.now() - tTour0;
+  progress(
+    `[scanWithGraph] tour-builder done in ${(tourElapsedMs / 1000).toFixed(1)}s — ${tour.tour.length} step(s)`,
+  );
+  // Stamp the tour onto the graph BEFORE the graph-reviewer phase — the
+  // reviewers need to see it.
+  phase4.graph.tour = tour.tour;
+
+  progress("[scanWithGraph] dispatching graph-reviewer face-off");
+  const tGraphRev0 = Date.now();
+  const graphVerdicts = await runGraphReviewer(phase4.graph, providerConfig, {
+    onProgress: progress,
+    ...(options.graphReviewerOptions ?? {}),
+  });
+  const graphFaceOffElapsedMs = Date.now() - tGraphRev0;
+  phase4.graph.meta.faceOffVerdicts.graph = graphVerdicts;
+  progress(
+    `[scanWithGraph] graph-reviewer done in ${(graphFaceOffElapsedMs / 1000).toFixed(1)}s — ` +
+      `${graphVerdicts.length} verdict(s) recorded`,
+  );
+
+  // Rewrite knowledge-graph.json in place — same path the assembler wrote,
+  // now carrying the populated tour + graph face-off verdicts.
+  writeFileSync(phase4.graphPath, JSON.stringify(phase4.graph, null, 2));
+
+  return {
+    ...phase4,
+    tourAnomalies: tour.anomalies,
+    tourElapsedMs,
+    graphFaceOffElapsedMs,
   };
 }

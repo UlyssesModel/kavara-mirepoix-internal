@@ -129,6 +129,24 @@ export function assembleKnowledgeGraph(
   //      on duplicate (one path in two layers) — the upstream architecture-
   //      analyzer's normalizer enforces uniqueness, so a duplicate here
   //      means that contract regressed.
+  //
+  //      Zero-file layer guard (Commit 9 / round-3 Codex finding #7): the
+  //      architecture-analyzer's normalizer already drops empty layers via a
+  //      post-filter (architecture-analyzer.ts L743-746), but a hand-edited
+  //      architecture.json or a future LLM-phase regression could re-introduce
+  //      one. Surface that as a fatal here rather than as silent corruption
+  //      downstream — every emitted layer MUST anchor at least one file, or
+  //      the graph reviewer pair will catch it as a representativeness defect
+  //      anyway. Defensive duplication of the upstream invariant; cheap to
+  //      enforce, surfaces drift immediately at the assembler boundary.
+  const emptyLayers = layers.filter((l) => l.fileIds.length === 0);
+  if (emptyLayers.length > 0) {
+    throw new Error(
+      `assembleKnowledgeGraph: ${emptyLayers.length} layer(s) have empty fileIds ` +
+        `(${emptyLayers.map((l) => l.id).join(", ")}). Upstream architecture-analyzer ` +
+        "must drop zero-file layers; surfacing as fatal so the regression is visible.",
+    );
+  }
   const pathToLayerId = new Map<string, string>();
   for (const layer of layers) {
     for (const fileId of layer.fileIds) {
@@ -219,6 +237,19 @@ export function assembleKnowledgeGraph(
   //      when we have a FileAnalysis for the parent file — without the
   //      analysis the file-analyzer hasn't surfaced the structural members
   //      in a shape we can pin to.
+  //
+  //      Node-id shape (Commit 9 / round-3 Codex finding #5): the legacy form
+  //      `<kind>:<path>:<name>` already differentiates a same-named function
+  //      and class IN THE SAME FILE via the leading `<kind>:` segment, but it
+  //      silently dropped same-kind same-name OVERLOADS (e.g. two functions
+  //      both named `foo` in `src/util.ts` — TypeScript declaration merging,
+  //      Python `@overload`, etc.) by `if (nodeIds.has(fnId)) continue`.
+  //      That dropped a real symbol from the graph without telling anyone.
+  //      We now derive `<kind>:<path>:<name>:<kind>` (the trailing kind tag
+  //      makes the disambiguator explicit even if a downstream consumer
+  //      parses only on the last `:` segment) and append `#<n>` for the
+  //      second+ occurrence of the same kind+name in the file, so every
+  //      symbol the file-analyzer surfaced lands as its own node.
   const containsEdges: GraphEdge[] = [];
   for (const [path, analysis] of Object.entries(fileAnalyses)) {
     const fileNodeId = filePathToNodeId.get(path);
@@ -230,9 +261,14 @@ export function assembleKnowledgeGraph(
     }
     const layerId = pathToLayerId.get(path);
 
+    // Per-file occurrence counter for overload disambiguation. Keyed by the
+    // (kind, name) pair so a same-named function and class don't share a
+    // slot — they wouldn't have collided anyway via the leading prefix, but
+    // keying jointly makes the counter mirror the actual ID shape exactly.
+    const occurrenceCount = new Map<string, number>();
+
     for (const fn of analysis.functions) {
-      const fnId = `function:${path}:${fn.name}`;
-      if (nodeIds.has(fnId)) continue;
+      const fnId = buildSymbolNodeId(path, fn.name, "function", occurrenceCount, nodeIds);
       nodes.push({
         id: fnId,
         type: "function",
@@ -248,8 +284,7 @@ export function assembleKnowledgeGraph(
     }
 
     for (const cls of analysis.classes) {
-      const clsId = `class:${path}:${cls.name}`;
-      if (nodeIds.has(clsId)) continue;
+      const clsId = buildSymbolNodeId(path, cls.name, "class", occurrenceCount, nodeIds);
       nodes.push({
         id: clsId,
         type: "class",
@@ -400,7 +435,7 @@ export function assembleKnowledgeGraph(
       generatedAt: nowIso,
       generatorVersion: GENERATOR_VERSION,
       schemaVersion: SCHEMA_VERSION,
-      faceOffVerdicts: [],
+      faceOffVerdicts: { assemble: [], graph: [] },
     },
   };
 }
@@ -408,4 +443,46 @@ export function assembleKnowledgeGraph(
 function basename(path: string): string {
   const idx = path.lastIndexOf("/");
   return idx === -1 ? path : path.slice(idx + 1);
+}
+
+/**
+ * Build a stable, collision-resistant node id for a function / class symbol.
+ *
+ * Shape: `<kind>:<path>:<name>:<kind>` for the first occurrence, then
+ * `<kind>:<path>:<name>:<kind>#<n>` (n ≥ 2) for subsequent same-kind same-name
+ * occurrences in the same file (overload disambiguation per finding #5).
+ *
+ * The kind appears at BOTH ends of the id deliberately:
+ *   - Leading `<kind>:` matches upstream Understand-Anything's ID convention
+ *     and keeps the dashboard's prefix-based filtering working without
+ *     touching downstream consumers.
+ *   - Trailing `:<kind>` makes the disambiguator explicit even if a consumer
+ *     parses only the LAST `:` segment, which a few of upstream's analyzer
+ *     scripts do (cross-checked against the cached upstream 2.7.5 plugin).
+ *
+ * The `#<n>` suffix is only appended when the deterministic base would
+ * collide — most ids in any given codebase have no suffix at all.
+ */
+function buildSymbolNodeId(
+  path: string,
+  name: string,
+  kind: "function" | "class",
+  occurrenceCount: Map<string, number>,
+  nodeIds: ReadonlySet<string>,
+): string {
+  const key = `${kind}:${name}`;
+  const baseId = `${kind}:${path}:${name}:${kind}`;
+  const prior = occurrenceCount.get(key) ?? 0;
+  occurrenceCount.set(key, prior + 1);
+  if (prior === 0 && !nodeIds.has(baseId)) {
+    return baseId;
+  }
+  // Walk forward until we find an unused suffix. The occurrenceCount map
+  // alone is sufficient for in-file disambiguation; the nodeIds guard
+  // covers the cross-file edge case where a `#<n>`-suffixed id could in
+  // principle be re-generated by the same overload pattern in another
+  // file pass. Both maps are needed for full coverage.
+  let next = prior + 1;
+  while (nodeIds.has(`${baseId}#${next}`)) next += 1;
+  return `${baseId}#${next}`;
 }

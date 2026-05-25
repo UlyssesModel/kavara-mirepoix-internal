@@ -61,14 +61,19 @@ export interface RunFaceOffReviewOptions {
   samplesPerCategory?: number;
 }
 
-/** Per-reviewer dispatch spec. The two values are baked in at v0; export the
- *  type so callers can extend or fork the reviewer roster downstream. */
+/** Per-reviewer dispatch spec. Used by both the assemble-reviewer pair
+ *  (Commit 8) and the graph-reviewer pair (Commit 9). Export the type so
+ *  callers can extend or fork the reviewer roster downstream. The id is
+ *  widened to `string` because the Commit-9 graph-reviewer pair introduces
+ *  two more identities (`claude-graph-reviewer`, `codex-graph-adversarial`)
+ *  and the union widens to arbitrary strings in `FaceOffVerdict.reviewer`
+ *  anyway. */
 export interface ReviewerSpec {
   /** Stable identifier recorded in `FaceOffVerdict.reviewer`. */
-  id: "claude-reviewer" | "codex-adversarial";
+  id: string;
   /** Short label used in progress + error messages. */
   label: string;
-  /** Builds the prompt text for this reviewer given a graph brief. */
+  /** Builds the prompt text for this reviewer given the brief content. */
   buildPrompt(brief: string): string;
 }
 
@@ -89,13 +94,9 @@ export const V0_REVIEWERS: readonly ReviewerSpec[] = [
 ] as const;
 
 /**
- * Run the in-product face-off review against a fully-assembled KnowledgeGraph.
- *
- * Spawns two @mirepoix/acp sessions in parallel (one per reviewer spec),
- * collects each verdict, and returns the array in the same order as
- * `V0_REVIEWERS`. Per-reviewer failures DO NOT abort the other reviewer;
- * a failed reviewer's verdict is recorded as `{ verdict: "block", notes:
- * "<error>" }` so the audit trail always has 2 entries.
+ * Run the in-product ASSEMBLE face-off review against a freshly-assembled
+ * KnowledgeGraph. Wrapper around `runReviewerPair` with the V0_REVIEWERS
+ * roster and the assemble-brief renderer.
  *
  * @param graph The assembled graph (post-assembleKnowledgeGraph, pre-write).
  * @param providerConfig Local Ollama endpoint + model.
@@ -106,24 +107,53 @@ export async function runFaceOffReview(
   providerConfig: ProviderConfig,
   options: RunFaceOffReviewOptions = {},
 ): Promise<FaceOffVerdict[]> {
-  const progress = options.onProgress ?? ((line: string) => process.stderr.write(`${line}\n`));
   const samplesPerCategory = options.samplesPerCategory ?? 6;
-
   const brief = renderGraphBrief(graph, samplesPerCategory);
+  return runReviewerPair(V0_REVIEWERS, brief, providerConfig, options, "face-off-review");
+}
 
-  progress(`[face-off-review] dispatching ${V0_REVIEWERS.length} reviewers in parallel`);
+/**
+ * Generic reviewer-pair dispatcher. Spawns N reviewer sessions in parallel
+ * (one per reviewer spec), collects each verdict, and returns the array in
+ * the same order as `specs`. Per-reviewer failures DO NOT abort the other
+ * reviewer; a failed reviewer's verdict is recorded as a synthetic BLOCK
+ * FaceOffVerdict so the audit trail always has exactly `specs.length` entries.
+ *
+ * Used by both the assemble-reviewer pair (Commit 8 — `runFaceOffReview`) and
+ * the graph-reviewer pair (Commit 9 — `runGraphReviewer`). The brief and
+ * roster differ per phase; the dispatch / failure-isolation / audit-trail
+ * cardinality contract is shared.
+ *
+ * @param specs Reviewer roster — one prompt builder per reviewer identity.
+ * @param brief Pre-rendered shared input passed verbatim to every reviewer's
+ *              `buildPrompt`. Same brief → asymmetric defect-class coverage.
+ * @param providerConfig Local Ollama endpoint + model.
+ * @param options Per-call tuning.
+ * @param logTag Short tag used in progress + error messages so the operator
+ *               can tell assemble-phase + graph-phase entries apart in the
+ *               same stream (e.g. "face-off-review", "graph-reviewer").
+ */
+export async function runReviewerPair(
+  specs: readonly ReviewerSpec[],
+  brief: string,
+  providerConfig: ProviderConfig,
+  options: RunFaceOffReviewOptions = {},
+  logTag = "face-off-review",
+): Promise<FaceOffVerdict[]> {
+  const progress = options.onProgress ?? ((line: string) => process.stderr.write(`${line}\n`));
+  progress(`[${logTag}] dispatching ${specs.length} reviewers in parallel`);
 
-  // N=2, unbounded Promise.all is fine — the bounded-concurrency semaphore
-  // in concurrency.ts is for batches in the dozens. `runOneReviewer` never
-  // throws — it catches its own failures and returns a synthetic BLOCK
-  // FaceOffVerdict carrying the real session id + elapsed time when a
-  // session was opened. The audit trail always has exactly N=2 entries.
+  // N=2 in practice, unbounded Promise.all is fine — the bounded-concurrency
+  // semaphore in concurrency.ts is for batches in the dozens. `runOneReviewer`
+  // never throws — it catches its own failures and returns a synthetic BLOCK
+  // FaceOffVerdict carrying the real session id + elapsed time when a session
+  // was opened.
   const verdicts = await Promise.all(
-    V0_REVIEWERS.map((spec) => runOneReviewer(spec, brief, providerConfig, options, progress)),
+    specs.map((spec) => runOneReviewer(spec, brief, providerConfig, options, progress, logTag)),
   );
 
   for (const v of verdicts) {
-    progress(`[face-off-review] ${v.reviewer}: ${v.verdict.toUpperCase()} (${v.durationMs}ms)`);
+    progress(`[${logTag}] ${v.reviewer}: ${v.verdict.toUpperCase()} (${v.durationMs}ms)`);
   }
 
   return verdicts;
@@ -148,10 +178,11 @@ async function runOneReviewer(
   providerConfig: ProviderConfig,
   options: RunFaceOffReviewOptions,
   progress: (line: string) => void,
+  logTag: string,
 ): Promise<FaceOffVerdict> {
   const t0 = Date.now();
   const timestamp = new Date().toISOString();
-  progress(`[face-off-review] ${spec.label}: started`);
+  progress(`[${logTag}] ${spec.label}: started`);
 
   // All setup that can throw (mkdtempSync, `new AcpClient`) lives INSIDE the
   // try so pre-prompt failures land in the synthetic-BLOCK path with the
@@ -195,7 +226,7 @@ async function runOneReviewer(
         .join(", ");
       const more = result.toolCalls.length > 5 ? ` (+${result.toolCalls.length - 5} more)` : "";
       warn(
-        `[face-off-review] WARNING: ${spec.id} — LLM made ${result.toolCalls.length} ` +
+        `[${logTag}] WARNING: ${spec.id} — LLM made ${result.toolCalls.length} ` +
           `tool call(s) despite "do not use tools". ${summary}${more}\n`,
       );
     }
@@ -206,7 +237,7 @@ async function runOneReviewer(
     if (client) {
       await client.shutdown().catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        warn(`[face-off-review] ${spec.id} shutdown error (non-fatal): ${msg}\n`);
+        warn(`[${logTag}] ${spec.id} shutdown error (non-fatal): ${msg}\n`);
       });
     }
     if (sessionCwd) {
@@ -220,7 +251,7 @@ async function runOneReviewer(
 
   const durationMs = Date.now() - t0;
   if (failure) {
-    progress(`[face-off-review] ${spec.label}: FAILED — ${failure.message.slice(0, 200)}`);
+    progress(`[${logTag}] ${spec.label}: FAILED — ${failure.message.slice(0, 200)}`);
     const noteHead = sessionId
       ? `Reviewer session ${sessionId} failed after ${durationMs}ms`
       : "Reviewer failed before an ACP session was established";
