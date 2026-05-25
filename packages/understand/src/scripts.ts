@@ -125,39 +125,55 @@ export async function ensureUpstreamBuilt(): Promise<void> {
   // pluginRoot is two dirs up from skills/understand/.
   const pluginRoot = resolve(skillsDir, "..", "..");
   const coreDistEntry = resolve(pluginRoot, "packages/core/dist/index.js");
-  // The .mjs scripts also need the plugin's registry deps (graphology etc.)
-  // present at <pluginRoot>/node_modules/. Checking core's dist alone is
-  // insufficient — a prior install scoped to @understand-anything/core only
-  // would build core but leave the plugin's node_modules empty, and the
-  // existsSync(coreDistEntry) early-return would then mask the missing deps.
-  // graphology is the canonical sentinel since its absence is the failure
-  // mode that motivated this check (see the iteration-2 fix below).
+  // The .mjs scripts also need the plugin's registry deps installed at
+  // <pluginRoot>/node_modules/. Sentinel on the two specific packages
+  // `compute-batches.mjs` imports at module load: `graphology` and
+  // `graphology-communities-louvain`. A partial install where only one is
+  // present still fails at runtime, so we require both.
   const graphologyEntry = resolve(pluginRoot, "node_modules/graphology/package.json");
+  const louvainEntry = resolve(
+    pluginRoot,
+    "node_modules/graphology-communities-louvain/package.json",
+  );
 
-  if (existsSync(coreDistEntry) && existsSync(graphologyEntry)) return;
+  if (existsSync(coreDistEntry) && existsSync(graphologyEntry) && existsSync(louvainEntry)) {
+    return;
+  }
 
-  // Workspace root is one level up from the plugin (per the outer
-  // pnpm-workspace.yaml that declares `understand-anything-plugin/packages/*`).
-  const workspaceRoot = resolve(pluginRoot, "..");
-  const workspaceFile = resolve(workspaceRoot, "pnpm-workspace.yaml");
-  if (!existsSync(workspaceFile)) {
+  // Two upstream install layouts exist and the pnpm-workspace.yaml lives in
+  // different places in each:
+  //   Marketplace install (editable git checkout): workspace root is ONE LEVEL
+  //     UP from the plugin (`marketplaces/understand-anything/pnpm-workspace.yaml`
+  //     declares `understand-anything-plugin/packages/*`, `understand-anything-plugin`,
+  //     and `homepage`).
+  //   Cache install (frozen runtime copy): the plugin dir IS the workspace root
+  //     (`cache/.../<version>/pnpm-workspace.yaml` declares `packages/*` only;
+  //     the plugin's package.json sits at the root).
+  // Pick the right workspace root by probing pluginRoot first, then pluginRoot/..
+  let workspaceRoot: string;
+  if (existsSync(resolve(pluginRoot, "pnpm-workspace.yaml"))) {
+    workspaceRoot = pluginRoot;
+  } else if (existsSync(resolve(pluginRoot, "..", "pnpm-workspace.yaml"))) {
+    workspaceRoot = resolve(pluginRoot, "..");
+  } else {
     throw new Error(
-      `@mirepoix/understand: expected pnpm-workspace.yaml at ${workspaceFile} ` +
-        "(one level up from the plugin root). The upstream layout may have changed; " +
-        "review ensureUpstreamBuilt in scripts.ts.",
+      `@mirepoix/understand: could not locate pnpm-workspace.yaml at ${pluginRoot} ` +
+        "or one level up. The upstream layout may have changed; review " +
+        "ensureUpstreamBuilt in scripts.ts.",
     );
   }
 
-  // 1. Install workspace deps for understand-anything-plugin and its transitive
-  //    workspaces. The plugin's .mjs scripts (compute-batches.mjs, etc.) use
-  //    registry deps declared on understand-anything-plugin/package.json
-  //    (graphology, graphology-communities-louvain), NOT on @understand-anything/core.
-  //    Filtering on the plugin via path (`./understand-anything-plugin...`)
-  //    pulls in both: the plugin's own deps AND core (a workspace dep of the
-  //    plugin). `...` includes deps; `--frozen-lockfile` refuses lockfile edits.
+  // Install the plugin + its transitive deps. Filter by npm package name
+  // (`@understand-anything/skill`) rather than path because the path-to-plugin
+  // differs between layouts (marketplace: `./understand-anything-plugin`;
+  // cache: workspaceRoot itself), whereas the npm name is layout-invariant.
+  // `...` includes deps (graphology, graphology-communities-louvain, and the
+  // workspace dep `@understand-anything/core`). `--frozen-lockfile` refuses
+  // lockfile edits — the plugin's pnpm-lock.yaml is owned by Claude Code's
+  // plugin-update path and any mutation here would be clobbered next update.
   await execFileAsync(
     "pnpm",
-    ["install", "--filter", "./understand-anything-plugin...", "--frozen-lockfile"],
+    ["install", "--filter", "@understand-anything/skill...", "--frozen-lockfile"],
     { cwd: workspaceRoot },
   );
 

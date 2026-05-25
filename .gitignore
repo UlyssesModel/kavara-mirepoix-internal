@@ -16,6 +16,7 @@ build/
 # session logs (local dev)
 .pi/
 sessions/
+.on-loop/
 *.session.jsonl
 
 # editor / OS

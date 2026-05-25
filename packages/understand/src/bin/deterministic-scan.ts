@@ -45,7 +45,10 @@ outputs:
 `);
 }
 
-main().catch((err: Error) => {
-  process.stderr.write(`deterministic-scan failed: ${err.message}\n${err.stack}\n`);
+main().catch((err: unknown) => {
+  // Normalize non-Error throws (string, plain object, etc.) so message/stack
+  // access doesn't itself crash the handler.
+  const e = err instanceof Error ? err : new Error(String(err));
+  process.stderr.write(`deterministic-scan failed: ${e.message}\n${e.stack ?? ""}\n`);
   process.exit(1);
 });
