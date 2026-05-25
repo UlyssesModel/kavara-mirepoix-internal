@@ -47,6 +47,26 @@ export interface ArchitecturalLayer {
   complexity: "simple" | "moderate" | "complex";
 }
 
+/** Business-domain aggregation. The second SYNTHESIS-pass LLM phase identifies
+ *  the user-facing processes the codebase implements (e.g. "code-comprehension",
+ *  "payment-processing") and assigns each architectural layer to exactly one
+ *  primary domain. `fileIds` is expanded post-hoc by the orchestrator from
+ *  `layerIds` via the architecture's `layer.fileIds` mapping — the LLM never
+ *  enumerates files directly. Many-to-one cardinality is the v0 contract (see
+ *  packages/understand/src/llm/domain-analyzer.ts for the rationale). */
+export interface BusinessDomain {
+  id: string;
+  name: string;
+  description: string;
+  /** Architectural-layer ids that participate in this domain. Must be a subset
+   *  of the layers from the upstream architecture-analyzer phase. */
+  layerIds: string[];
+  /** Files belonging to this domain — expanded deterministically from
+   *  `layerIds` via the architecture's `layer.fileIds` mapping. */
+  fileIds: string[];
+  complexity: "simple" | "moderate" | "complex";
+}
+
 /** Knowledge graph — output of @mirepoix/understand. Schema-compatible with the upstream Understand-Anything dashboard. */
 export interface KnowledgeGraph {
   project: {

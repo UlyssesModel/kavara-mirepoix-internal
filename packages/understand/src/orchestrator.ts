@@ -22,8 +22,15 @@
 //   normalized ArchitecturalLayer[] — every code file is in exactly one
 //   layer's fileIds.
 //
-// Subsequent commits will add domain-analyzer, assembler face-off,
-// graph-reviewer face-off, tour-builder, and the full runUnderstand() composition.
+//   scanWithDomains(projectRoot, providerConfig, options?) —
+//   scanWithArchitecture + the second SYNTHESIS-pass LLM phase (single
+//   domain-analyzer session). Writes domains.json with the normalized
+//   BusinessDomain[] — every architectural layer is in exactly one
+//   domain's layerIds, and each domain's fileIds is the union of its
+//   member layers' fileIds.
+//
+// Subsequent commits will add the assembler face-off, graph-reviewer face-off,
+// tour-builder, and the full runUnderstand() composition.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -33,6 +40,11 @@ import {
   type RunArchitectureAnalyzerOptions,
   runArchitectureAnalyzer,
 } from "./llm/architecture-analyzer";
+import {
+  type DomainAnalyzerResult,
+  type RunDomainAnalyzerOptions,
+  runDomainAnalyzer,
+} from "./llm/domain-analyzer";
 import {
   type BatchAnalysisResult,
   type FileAnalysis,
@@ -46,7 +58,7 @@ import {
   type RunProjectScannerOptions,
   runProjectScanner,
 } from "./llm/project-scanner";
-import type { ArchitecturalLayer } from "./types";
+import type { ArchitecturalLayer, BusinessDomain } from "./types";
 import {
   type BatchesResult,
   type ImportMapResult,
@@ -404,5 +416,103 @@ export async function scanWithArchitecture(
     architectureGroupCount: archResult.groupCount,
     architectureElapsedMs: archResult.elapsedMs,
     architecturePath,
+  };
+}
+
+export interface ScanWithDomainsOptions extends ScanWithArchitectureOptions {
+  /** Per-call knobs for the domain-analyzer LLM phase. */
+  domainOptions?: RunDomainAnalyzerOptions;
+}
+
+/** Output of `scanWithDomains` — everything from scanWithArchitecture plus
+ *  the business-domain synthesis. */
+export interface ScanWithDomainsResult extends ScanWithArchitectureResult {
+  /** Normalized business domains — every architectural layer appears in
+   *  exactly one domain's layerIds. */
+  domains: BusinessDomain[];
+  /** Diagnostic anomalies from domain normalization (unassigned/duplicate/
+   *  unknown layers, unusual domain IDs, layer-id collisions). */
+  domainAnomalies: DomainAnalyzerResult["anomalies"];
+  /** Number of layers the LLM was asked to assign in this run. */
+  domainLayerCount: number;
+  /** Wall-clock for the domain-analyzer LLM call alone. */
+  domainElapsedMs: number;
+  /** Absolute path of the domains.json written. */
+  domainsPath: string;
+}
+
+/**
+ * Run the full pipeline through the domain-analyzer synthesis phase.
+ *
+ * Behavior:
+ *   - Composes scanWithArchitecture (deterministic + narrative + per-file
+ *     fan-out + architectural layers) and feeds its output into
+ *     runDomainAnalyzer.
+ *   - Domain-analyzer is a SINGLE @mirepoix/acp session (synthesis pass,
+ *     not parallelizable). Input cardinality is layers (~5-10), not files.
+ *   - Writes `<projectRoot>/.understand-anything/intermediate/domains.json`
+ *     with the normalized domain set.
+ *
+ * Contract:
+ *   - Every layer in `architecture.layers` appears in exactly one domain's
+ *     layerIds (uniqueness enforced post-hoc by runDomainAnalyzer's
+ *     normalizer; unassigned layers are swept into a synthetic
+ *     "domain:shared").
+ *   - Each domain's `fileIds` is the union of its member layers' fileIds.
+ *
+ * Failure modes:
+ *   - If the LLM session fails or the response can't be parsed,
+ *     runDomainAnalyzer throws. The deterministic + narrative +
+ *     file-analyses + architecture artifacts already on disk remain valid;
+ *     a re-run can pick up from here once the failure is resolved.
+ */
+export async function scanWithDomains(
+  projectRoot: string,
+  providerConfig: ProviderConfig,
+  options: ScanWithDomainsOptions = {},
+): Promise<ScanWithDomainsResult> {
+  const progress = options.onProgress ?? ((line: string) => process.stderr.write(`${line}\n`));
+  const phase2 = await scanWithArchitecture(projectRoot, providerConfig, options);
+
+  progress(`[scanWithDomains] running domain-analyzer over ${phase2.layers.length} layer(s)`);
+
+  const tDom0 = Date.now();
+  const domResult = await runDomainAnalyzer(
+    {
+      layers: phase2.layers,
+      fileAnalyses: phase2.fileAnalyses,
+      narrative: phase2.narrative,
+    },
+    providerConfig,
+    options.domainOptions,
+  );
+  const tDomElapsed = Date.now() - tDom0;
+  progress(
+    `[scanWithDomains] domain-analyzer done in ${(tDomElapsed / 1000).toFixed(1)}s — ${domResult.domains.length} domain(s)`,
+  );
+
+  const intermediateDir = join(projectRoot, ".understand-anything", "intermediate");
+  mkdirSync(intermediateDir, { recursive: true });
+  const domainsPath = join(intermediateDir, "domains.json");
+  writeFileSync(
+    domainsPath,
+    JSON.stringify(
+      {
+        scriptCompleted: true,
+        domains: domResult.domains,
+        anomalies: domResult.anomalies,
+      },
+      null,
+      2,
+    ),
+  );
+
+  return {
+    ...phase2,
+    domains: domResult.domains,
+    domainAnomalies: domResult.anomalies,
+    domainLayerCount: domResult.layerCount,
+    domainElapsedMs: domResult.elapsedMs,
+    domainsPath,
   };
 }
