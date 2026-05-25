@@ -1,27 +1,35 @@
 // @mirepoix/understand — orchestrator.
 //
-// Two compositions live here:
+// Three compositions live here, each building on the previous:
 //
 //   deterministicScan(projectRoot) — four LLM-free phases of upstream
-//   Understand-Anything:
-//     1. runScanProject       — enumerate + classify files.
-//     2. runExtractImportMap  — tree-sitter resolved import edges per file.
-//     3. Write minimal scan-result.json — compute-batches.mjs reads only
-//        `files` and `importMap` from this file (upstream main() lines 338-341).
-//     4. runComputeBatches    — Louvain community detection over the import
-//                               graph, producing the batch plan.
+//   Understand-Anything (scan → import-map → write minimal scan-result.json
+//   → compute-batches via Louvain).
 //
 //   scanWithNarrative(projectRoot, providerConfig) — deterministicScan +
-//   the first LLM phase (runProjectScanner). Merges the LLM narrative
-//   (name, description, frameworks, languages) into scan-result.json so the
-//   on-disk file matches upstream's full Phase 1 output schema.
+//   the first LLM phase (runProjectScanner via @mirepoix/acp). Merges the
+//   narrative (name, description, frameworks, languages) into scan-result.json.
 //
-// Subsequent commits will add scanWithFileAnalyses (parallel file-analyzer
-// fan-out) and the full runUnderstand() composition.
+//   scanWithFileAnalyses(projectRoot, providerConfig, options?) —
+//   scanWithNarrative + the first MULTI-SESSION LLM phase (file-analyzer
+//   fan-out via @mirepoix/acp, one session per batch, bounded concurrency).
+//   Writes file-analyses.json with one record per analyzed file (combining
+//   deterministic structural data + LLM summary/complexity).
+//
+// Subsequent commits will add architecture-analyzer, domain-analyzer,
+// assembler face-off, graph-reviewer face-off, tour-builder, and the
+// full runUnderstand() composition.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  type BatchAnalysisResult,
+  type FileAnalysis,
+  type RunFileAnalyzerOptions,
+  runFileAnalyzerOnBatch,
+} from "./llm/file-analyzer";
+import { runWithConcurrency, type SettledResult } from "./llm/concurrency";
 import {
   type ProjectNarrative,
   type ProviderConfig,
@@ -155,4 +163,136 @@ export async function scanWithNarrative(
   writeFileSync(deterministic.scanResultPath, JSON.stringify(merged, null, 2));
 
   return { ...deterministic, narrative };
+}
+
+/** Default file-analyzer fan-out concurrency. Empirically tuned for local
+ *  qwen3-coder:30b on a single A100. Upstream's `claude /understand` uses 5
+ *  concurrent subagents in Phase 2; 4 matches that order of magnitude while
+ *  leaving headroom for the GPU's KV cache eviction patterns. */
+const DEFAULT_FILE_ANALYZER_CONCURRENCY = 4;
+
+export interface ScanWithFileAnalysesOptions {
+  /** Max concurrent file-analyzer batches in flight. Default 4. Each batch
+   *  is one @mirepoix/acp child process + one ACP session, so concurrency=N
+   *  ⇒ N Bun processes + N concurrent Ollama requests at peak. */
+  concurrency?: number;
+  /** Per-batch knobs (source preview chars, acp entry path, timeout, stderr). */
+  perBatch?: RunFileAnalyzerOptions;
+  /** Per-narrative-call knobs (forwarded to scanWithNarrative). */
+  scannerOptions?: RunProjectScannerOptions;
+  /** Emit progress lines to this sink as each batch completes (default: stderr). */
+  onProgress?: (line: string) => void;
+}
+
+/** Per-batch outcome with failures preserved. */
+export interface BatchOutcome {
+  batchIndex: number;
+  ok: boolean;
+  /** Present when ok=true. */
+  result?: BatchAnalysisResult;
+  /** Present when ok=false — the captured error message. */
+  error?: string;
+  /** Wall-clock for this batch's slot (includes the time spent waiting for
+   *  a concurrency slot, then the actual work). Approximate. */
+  elapsedMs?: number;
+}
+
+/** Output of `scanWithFileAnalyses` — everything from scanWithNarrative plus
+ *  the fan-out results. */
+export interface ScanWithFileAnalysesResult extends ScanWithNarrativeResult {
+  /** Aggregated per-file analyses (merged across all successful batches), keyed by path. */
+  fileAnalyses: Record<string, FileAnalysis>;
+  /** Per-batch outcomes — useful for surfacing partial failures. */
+  batchOutcomes: BatchOutcome[];
+  /** Counts for the smoke CLI to render at a glance. */
+  filesAnalyzed: number;
+  filesTotal: number;
+  batchesSucceeded: number;
+  batchesFailed: number;
+  /** Absolute path of the file-analyses.json written. */
+  fileAnalysesPath: string;
+}
+
+/**
+ * Run the full Phase 1 pipeline plus the parallel file-analyzer fan-out.
+ *
+ * Behavior:
+ *   - Per-batch failures are isolated: one bad batch records its error and
+ *     does NOT abort the others (matches the architectural decision; the
+ *     handoff explicitly calls this out: "Per-batch failures are isolated,
+ *     not fatal").
+ *   - Concurrency is bounded by `options.concurrency` (default 4). Each
+ *     batch spawns its own @mirepoix/acp subprocess with a sandboxed cwd.
+ *   - Writes `<projectRoot>/.understand-anything/intermediate/file-analyses.json`
+ *     with the merged per-file analyses (one record per successfully analyzed
+ *     file). Gitignored upstream — safe to land on developer repos.
+ *
+ * The result includes counts so the smoke CLI can render `N/M files`.
+ */
+export async function scanWithFileAnalyses(
+  projectRoot: string,
+  providerConfig: ProviderConfig,
+  options: ScanWithFileAnalysesOptions = {},
+): Promise<ScanWithFileAnalysesResult> {
+  const concurrency = options.concurrency ?? DEFAULT_FILE_ANALYZER_CONCURRENCY;
+  const progress = options.onProgress ?? ((line: string) => process.stderr.write(`${line}\n`));
+
+  const narrative = await scanWithNarrative(projectRoot, providerConfig, options.scannerOptions);
+  const batches = narrative.batches.batches;
+
+  progress(
+    `[scanWithFileAnalyses] dispatching ${batches.length} batches at concurrency=${concurrency}`,
+  );
+
+  const t0 = Date.now();
+  const settled: SettledResult<BatchAnalysisResult>[] = await runWithConcurrency(
+    batches,
+    concurrency,
+    async (batch) => {
+      const r = await runFileAnalyzerOnBatch(projectRoot, batch, providerConfig, options.perBatch);
+      progress(
+        `[scanWithFileAnalyses]   batch ${r.batchIndex}: ${r.fileCount}/${batch.files.length} files in ${(r.elapsedMs / 1000).toFixed(1)}s`,
+      );
+      return r;
+    },
+  );
+  const elapsedMs = Date.now() - t0;
+  progress(`[scanWithFileAnalyses] fan-out done in ${(elapsedMs / 1000).toFixed(1)}s`);
+
+  const outcomes: BatchOutcome[] = batches.map((b, i) => {
+    const s = settled[i];
+    if (s.ok) {
+      return { batchIndex: b.batchIndex, ok: true, result: s.value, elapsedMs: s.value.elapsedMs };
+    }
+    progress(
+      `[scanWithFileAnalyses]   batch ${b.batchIndex}: FAILED — ${s.error.message.slice(0, 200)}`,
+    );
+    return { batchIndex: b.batchIndex, ok: false, error: s.error.message };
+  });
+
+  const fileAnalyses: Record<string, FileAnalysis> = {};
+  for (const o of outcomes) {
+    if (!o.ok || !o.result) continue;
+    Object.assign(fileAnalyses, o.result.analyses);
+  }
+
+  const intermediateDir = join(projectRoot, ".understand-anything", "intermediate");
+  mkdirSync(intermediateDir, { recursive: true });
+  const fileAnalysesPath = join(intermediateDir, "file-analyses.json");
+  writeFileSync(fileAnalysesPath, JSON.stringify(fileAnalyses, null, 2));
+
+  const filesTotal = batches.reduce((sum, b) => sum + b.files.length, 0);
+  const batchesSucceeded = outcomes.filter((o) => o.ok).length;
+  const batchesFailed = outcomes.length - batchesSucceeded;
+
+  return {
+    ...narrative,
+    fileAnalyses,
+    batchOutcomes: outcomes,
+    filesAnalyzed: Object.keys(fileAnalyses).length,
+    filesTotal,
+    batchesSucceeded,
+    batchesFailed,
+    fileAnalysesPath,
+  };
 }

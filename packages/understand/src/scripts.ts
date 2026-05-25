@@ -241,11 +241,26 @@ export interface ExtractStructureResult {
   results: unknown[];
 }
 
-/** Per-batch entry inside compute-batches output. */
+/**
+ * Per-batch entry inside compute-batches output.
+ *
+ * Verified against the on-disk shape upstream produces (2026-05-25 recon):
+ * `batches.json` has `batchIndex`, `files`, `batchImportData` (per-file resolved
+ * import list, used by the file-analyzer LLM phase to emit edges), and
+ * `neighborMap` (cross-batch exported-symbol context, used by file-analyzer
+ * to validate inter-batch edge references). The legacy `mergeable: boolean`
+ * field is NOT actually emitted by upstream — kept as `mergeable?` for
+ * back-compat with any caller that already touched it.
+ */
 export interface BatchEntry {
   batchIndex: number;
   files: ScannedFile[];
-  mergeable: boolean;
+  /** Per-file resolved internal imports, keyed by file path. Empty arrays for
+   *  files with no internal imports. Required for file-analyzer edge generation. */
+  batchImportData: Record<string, string[]>;
+  /** Cross-batch exported symbols, keyed by file path. May be empty. */
+  neighborMap: Record<string, unknown>;
+  mergeable?: boolean;
 }
 
 /** compute-batches.mjs output. The shape is intentionally open beyond the
