@@ -257,13 +257,29 @@ async function runOneReviewer(
 }
 
 /**
- * Parse the reviewer's JSON response. Tolerates leading/trailing prose around
- * a single JSON object with `verdict` + `notes`. Fails CLOSED to BLOCK on any
- * malformed input — never collapses unparseable output to APPROVE. The
- * verbatim raw text is preserved in `notes` so the audit trail surfaces the
- * anomaly. Originated as Codex adversarial-review finding on Commit 8: an
- * adversarial reviewer emitting truncated JSON or a misspelled `verdict`
- * field would otherwise be recorded as approval.
+ * Parse a reviewer's structured-output response into a FaceOffVerdict.
+ *
+ * AUDIT-TRAIL INTEGRITY — fails CLOSED, never OPEN:
+ *
+ * Unparseable JSON synthesizes a BLOCK verdict with the parse error in
+ * `notes`. We NEVER silently record an APPROVE on malformed output.
+ *
+ * Rationale: the whole `meta.faceOffVerdicts[]` contract (the
+ * load-bearing premise of Commit 8 — see Mirepoix Modernize Product
+ * Spec PM1/120979458) depends on the audit trail being trustworthy.
+ * A fail-OPEN parser would record APPROVE on any reviewer network
+ * error, truncation, or output corruption — silently turning failures
+ * into false attestation. That's a credibility-destroying regression
+ * the moment a customer audit team asks "what if the reviewer output
+ * got corrupted?"
+ *
+ * DO NOT change this to fail-open as a "graceful recovery" improvement.
+ * If you find this comment in a PR proposing to relax it, push back.
+ * Customer auditors must see "reviewer output was malformed" as a
+ * finding, not a silent approval.
+ *
+ * @see [[reference] feedback_face_off_loop_closure — round-2 verdicts
+ *      are part of the audit trail]
  */
 function parseVerdict(
   text: string,
