@@ -1,35 +1,40 @@
-// @mirepoix/understand — deterministic-only orchestrator.
+// @mirepoix/understand — orchestrator.
 //
-// Chains the four LLM-free phases of upstream Understand-Anything:
+// Two compositions live here:
 //
-//   1. runScanProject       — enumerate + classify files (language, category,
-//                             line count, complexity bucket).
-//   2. runExtractImportMap  — tree-sitter resolved import edges per file.
-//   3. Write a minimal scan-result.json — compute-batches.mjs reads only
-//      `files` and `importMap` from this file (verified in upstream's
-//      main(), lines 338-341), so we can omit the LLM-narrative fields for
-//      the deterministic-only path. The full runUnderstand() orchestrator
-//      will merge in name/description/frameworks/etc. before batching.
-//   4. runComputeBatches    — Louvain community detection over the import
-//                             graph, producing the batch plan that the LLM
-//                             file-analyzer phase will fan out over.
+//   deterministicScan(projectRoot) — four LLM-free phases of upstream
+//   Understand-Anything:
+//     1. runScanProject       — enumerate + classify files.
+//     2. runExtractImportMap  — tree-sitter resolved import edges per file.
+//     3. Write minimal scan-result.json — compute-batches.mjs reads only
+//        `files` and `importMap` from this file (upstream main() lines 338-341).
+//     4. runComputeBatches    — Louvain community detection over the import
+//                               graph, producing the batch plan.
 //
-// No LLM calls in this path. Useful as:
-//   - The first end-to-end exercise of the script-wrapper layer against a
-//     real repo (smoke test).
-//   - The deterministic preamble of the full runUnderstand() orchestrator;
-//     subsequent commits wire LLM phases on top of this output.
+//   scanWithNarrative(projectRoot, providerConfig) — deterministicScan +
+//   the first LLM phase (runProjectScanner). Merges the LLM narrative
+//   (name, description, frameworks, languages) into scan-result.json so the
+//   on-disk file matches upstream's full Phase 1 output schema.
+//
+// Subsequent commits will add scanWithFileAnalyses (parallel file-analyzer
+// fan-out) and the full runUnderstand() composition.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
-  runComputeBatches,
-  runExtractImportMap,
-  runScanProject,
+  type ProjectNarrative,
+  type ProviderConfig,
+  type RunProjectScannerOptions,
+  runProjectScanner,
+} from "./llm/project-scanner";
+import {
   type BatchesResult,
   type ImportMapResult,
   type ScanProjectResult,
+  runComputeBatches,
+  runExtractImportMap,
+  runScanProject,
 } from "./scripts";
 
 /** Output of `deterministicScan` — combines typed results from all four phases
@@ -96,4 +101,58 @@ export async function deterministicScan(projectRoot: string): Promise<Determinis
     scanResultPath,
     batchesPath: join(intermediateDir, "batches.json"),
   };
+}
+
+/** Output of `scanWithNarrative` — deterministic results plus LLM narrative. */
+export interface ScanWithNarrativeResult extends DeterministicScanResult {
+  narrative: ProjectNarrative;
+}
+
+/**
+ * Run the deterministic phase followed by the LLM project-scanner phase.
+ *
+ * Side effects:
+ *   - Everything `deterministicScan` does, plus
+ *   - Rewrites `<projectRoot>/.understand-anything/intermediate/scan-result.json`
+ *     with the narrative fields merged in at the top level (`name`,
+ *     `description`, `frameworks`, `languages`).
+ *
+ * The merged shape matches upstream's full Phase 1 output, so downstream
+ * phases (Commit 5+ file-analyzer fan-out, architecture-analyzer, etc.) read
+ * the same fields they would from a `claude /understand` run.
+ *
+ * @param projectRoot — absolute path to the repository under analysis.
+ * @param providerConfig — local Ollama endpoint + model name. Required because
+ *   ACP-server defaults assume `qwen2.5-coder:32b-instruct` and we ship with
+ *   `qwen3-coder:30b` on kavara-builder.
+ * @param scannerOptions — optional knobs (README char limit, acp entry path,
+ *   timeout, stderr handler).
+ */
+export async function scanWithNarrative(
+  projectRoot: string,
+  providerConfig: ProviderConfig,
+  scannerOptions: RunProjectScannerOptions = {},
+): Promise<ScanWithNarrativeResult> {
+  const deterministic = await deterministicScan(projectRoot);
+  const narrative = await runProjectScanner(projectRoot, providerConfig, scannerOptions);
+
+  // Read-merge-write the on-disk scan-result.json so the narrative fields
+  // land alongside the deterministic ones. We read the file we just wrote
+  // (vs. reconstructing in-memory) to be the single source of truth — any
+  // future tweak to the deterministic-write step automatically carries
+  // through to this merged file.
+  const existing = JSON.parse(readFileSync(deterministic.scanResultPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  const merged = {
+    ...existing,
+    name: narrative.name,
+    description: narrative.description,
+    frameworks: narrative.frameworks,
+    languages: narrative.languages,
+  };
+  writeFileSync(deterministic.scanResultPath, JSON.stringify(merged, null, 2));
+
+  return { ...deterministic, narrative };
 }
