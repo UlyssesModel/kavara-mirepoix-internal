@@ -153,21 +153,29 @@ async function runOneReviewer(
   const timestamp = new Date().toISOString();
   progress(`[face-off-review] ${spec.label}: started`);
 
-  const sessionCwd = mkdtempSync(join(tmpdir(), "mirepoix-understand-faceoff-"));
+  // All setup that can throw (mkdtempSync, `new AcpClient`) lives INSIDE the
+  // try so pre-prompt failures land in the synthetic-BLOCK path with the
+  // real durationMs preserved. Originated as Codex round-2 finding: the
+  // prior version did the setup before the try, so e.g. a tmpdir-creation
+  // EROFS or an AcpClient constructor throw would propagate past
+  // Promise.all and break the "audit trail always has N=2 entries"
+  // contract.
   const warn = options.onStderr ?? ((chunk: string) => process.stderr.write(chunk));
-
-  const acpOpts: AcpClientOptions = {
-    ollamaUrl: providerConfig.url,
-    model: providerConfig.model,
-    acpEntry: options.acpEntry,
-    timeoutMs: options.timeoutMs ?? 600_000,
-    onStderr: options.onStderr,
-  };
-  const client = new AcpClient(acpOpts);
+  let sessionCwd: string | null = null;
+  let client: AcpClient | null = null;
   let sessionId = "";
   let failure: Error | null = null;
   let parsed: { verdict: "approve" | "block"; notes: string } | null = null;
   try {
+    sessionCwd = mkdtempSync(join(tmpdir(), "mirepoix-understand-faceoff-"));
+    const acpOpts: AcpClientOptions = {
+      ollamaUrl: providerConfig.url,
+      model: providerConfig.model,
+      acpEntry: options.acpEntry,
+      timeoutMs: options.timeoutMs ?? 600_000,
+      onStderr: options.onStderr,
+    };
+    client = new AcpClient(acpOpts);
     await client.initialize();
     sessionId = await client.newSession(sessionCwd);
     const result = await client.prompt(sessionId, spec.buildPrompt(brief));
@@ -195,14 +203,18 @@ async function runOneReviewer(
   } catch (err) {
     failure = err instanceof Error ? err : new Error(String(err));
   } finally {
-    await client.shutdown().catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      warn(`[face-off-review] ${spec.id} shutdown error (non-fatal): ${msg}\n`);
-    });
-    try {
-      rmSync(sessionCwd, { recursive: true, force: true });
-    } catch {
-      // Tmp dir cleanup is best-effort.
+    if (client) {
+      await client.shutdown().catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        warn(`[face-off-review] ${spec.id} shutdown error (non-fatal): ${msg}\n`);
+      });
+    }
+    if (sessionCwd) {
+      try {
+        rmSync(sessionCwd, { recursive: true, force: true });
+      } catch {
+        // Tmp dir cleanup is best-effort.
+      }
     }
   }
 
@@ -259,16 +271,24 @@ function parseVerdict(
 ): { verdict: "approve" | "block"; notes: string } {
   const json = extractJsonObject(text);
   if (!json) {
-    // No top-level JSON object recoverable. Free-form responses from the
-    // reviewer can still carry a clear verdict word at the top of the text;
-    // accept "approve" / "approved" only when no contradicting "block" /
-    // "request_changes" / "reject" appears in the same head. Anything else
-    // (including silent return) defaults to BLOCK and ships the raw text.
-    const head = text.slice(0, 200).toLowerCase();
-    const blocks = /\b(block|request[_ ]changes|reject)\b/.test(head);
-    const approves = /\b(approve|approved)\b/.test(head);
-    const verdict: "approve" | "block" = approves && !blocks ? "approve" : "block";
-    return { verdict, notes: text.trim() };
+    // No top-level JSON object recoverable. The reviewer prompt explicitly
+    // requires the response to begin with `{` and end with `}`; anything
+    // that fails that contract is BLOCK with the raw text preserved.
+    //
+    // Originated as Codex round-2 finding (HIGH): the prior version's prose
+    // fallback would match the bare word `approve` anywhere in the first
+    // 200 chars, so adversarial input like `I cannot approve this — verdict:
+    // block` recorded APPROVE (the `block` token was clipped past the 200-
+    // char head, OR the word-boundary regex matched the embedded `approve`
+    // without seeing the contradicting verdict statement). Removing the
+    // prose path entirely is the only way to fail closed against the full
+    // space of adversarial JSON-less output.
+    return {
+      verdict: "block",
+      notes:
+        `face-off-review[${reviewerId}]: response did not contain a recoverable ` +
+        `JSON object. Raw text:\n${text}`,
+    };
   }
   let parsed: unknown;
   try {

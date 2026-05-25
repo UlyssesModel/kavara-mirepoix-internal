@@ -339,14 +339,30 @@ export function assembleKnowledgeGraph(
         computed.push(path);
       }
     }
-    const expectedCount = computed.length;
-    const actualCount = new Set(domain.fileIds).size;
-    if (actualCount !== expectedCount) {
+    // Verify the input fileIds set equals the recomputed union — by
+    // cardinality AND by membership. The count check alone passes when the
+    // input has the right count but disjoint members (e.g. computed=[a,b],
+    // input=[x,y]); the membership check above closes that hole. Originated
+    // as Codex round-2 finding: the prior cardinality-only assertion let
+    // same-count contradictions through, weakening the "fail loud on hand-
+    // edited domains.json" contract.
+    const expectedSet = new Set(computed);
+    const inputSet = new Set(domain.fileIds);
+    if (expectedSet.size !== inputSet.size) {
       throw new Error(
-        `assembleKnowledgeGraph: domain "${domain.id}" fileIds count (${actualCount}) ` +
-          `disagrees with the union of its member layers (${expectedCount}). ` +
+        `assembleKnowledgeGraph: domain "${domain.id}" fileIds count (${inputSet.size}) ` +
+          `disagrees with the union of its member layers (${expectedSet.size}). ` +
           "domain.fileIds must equal the deterministic union of `domain.layerIds[*].fileIds`.",
       );
+    }
+    for (const path of inputSet) {
+      if (!expectedSet.has(path)) {
+        throw new Error(
+          `assembleKnowledgeGraph: domain "${domain.id}" fileIds contains path "${path}" ` +
+            "that is NOT in the union of its member layers. domain.fileIds must equal " +
+            "the deterministic union of `domain.layerIds[*].fileIds`.",
+        );
+      }
     }
     return {
       ...domain,
