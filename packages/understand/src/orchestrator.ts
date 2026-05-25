@@ -29,12 +29,21 @@
 //   domain's layerIds, and each domain's fileIds is the union of its
 //   member layers' fileIds.
 //
-// Subsequent commits will add the assembler face-off, graph-reviewer face-off,
-// tour-builder, and the full runUnderstand() composition.
+//   scanWithAssembler(projectRoot, providerConfig, options?) —
+//   scanWithDomains + the deterministic assembler + the in-product face-off
+//   review (two parallel @mirepoix/acp reviewer sessions). Writes the
+//   unified knowledge-graph.json with the face-off verdicts embedded in
+//   `meta.faceOffVerdicts[]`. This is the architectural climax of α-3a:
+//   multi-reviewer validation goes from "applied to our dev workflow" to
+//   "baked into the product itself" per ADR-013.
+//
+// Subsequent commits will add the graph-reviewer face-off, tour-builder,
+// and the full runUnderstand() composition.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { assembleKnowledgeGraph } from "./assembler";
 import {
   type ArchitectureAnalyzerResult,
   type RunArchitectureAnalyzerOptions,
@@ -45,6 +54,7 @@ import {
   type RunDomainAnalyzerOptions,
   runDomainAnalyzer,
 } from "./llm/domain-analyzer";
+import { type RunFaceOffReviewOptions, runFaceOffReview } from "./llm/face-off-reviewer";
 import {
   type BatchAnalysisResult,
   type FileAnalysis,
@@ -58,7 +68,7 @@ import {
   type RunProjectScannerOptions,
   runProjectScanner,
 } from "./llm/project-scanner";
-import type { ArchitecturalLayer, BusinessDomain } from "./types";
+import type { ArchitecturalLayer, BusinessDomain, KnowledgeGraph } from "./types";
 import {
   type BatchesResult,
   type ImportMapResult,
@@ -514,5 +524,99 @@ export async function scanWithDomains(
     domainLayerCount: domResult.layerCount,
     domainElapsedMs: domResult.elapsedMs,
     domainsPath,
+  };
+}
+
+export interface ScanWithAssemblerOptions extends ScanWithDomainsOptions {
+  /** Per-call knobs for the in-product face-off review phase. */
+  faceOffOptions?: RunFaceOffReviewOptions;
+}
+
+/** Output of `scanWithAssembler` — the v0 final shape. Composes everything
+ *  from `scanWithDomains` and adds the assembled KnowledgeGraph + the
+ *  on-disk path to `knowledge-graph.json` + wall-clock for the face-off
+ *  reviewer phase. */
+export interface ScanWithAssemblerResult extends ScanWithDomainsResult {
+  /** The unified KnowledgeGraph, with `meta.faceOffVerdicts[]` populated. */
+  graph: KnowledgeGraph;
+  /** Absolute path of the knowledge-graph.json written. */
+  graphPath: string;
+  /** Wall-clock for the parallel face-off reviewer phase alone. */
+  faceOffElapsedMs: number;
+}
+
+/**
+ * Run the full pipeline through assembly + in-product face-off review.
+ *
+ * Behavior:
+ *   - Composes scanWithDomains (deterministic + narrative + per-file
+ *     fan-out + architectural layers + business domains) and feeds the
+ *     full output into the pure-function assembler.
+ *   - Dispatches the in-product face-off review (two parallel
+ *     @mirepoix/acp reviewer sessions per ADR-013). Verdicts are merged
+ *     into `graph.meta.faceOffVerdicts[]`.
+ *   - Writes `<projectRoot>/.understand-anything/intermediate/
+ *     knowledge-graph.json` with the verdicts embedded.
+ *
+ * V0 surfacing rules:
+ *   - If either reviewer BLOCKs, the orchestrator does NOT throw — it
+ *     records the verdict and returns the graph anyway. Downstream
+ *     consumer (caller or human) decides what to do. v0 contract is
+ *     "verdicts captured," not "verdicts converged."
+ *   - Per-reviewer session failure is downgraded to a BLOCK verdict
+ *     (see llm/face-off-reviewer.ts). The audit trail always has
+ *     exactly 2 entries.
+ */
+export async function scanWithAssembler(
+  projectRoot: string,
+  providerConfig: ProviderConfig,
+  options: ScanWithAssemblerOptions = {},
+): Promise<ScanWithAssemblerResult> {
+  const progress = options.onProgress ?? ((line: string) => process.stderr.write(`${line}\n`));
+  const phase3 = await scanWithDomains(projectRoot, providerConfig, options);
+
+  progress("[scanWithAssembler] assembling unified knowledge graph");
+  const graph = assembleKnowledgeGraph({
+    projectRoot,
+    deterministicScan: {
+      scan: phase3.scan,
+      importMap: phase3.importMap,
+      batches: phase3.batches,
+      scanResultPath: phase3.scanResultPath,
+      batchesPath: phase3.batchesPath,
+    },
+    narrative: phase3.narrative,
+    fileAnalyses: phase3.fileAnalyses,
+    layers: phase3.layers,
+    domains: phase3.domains,
+  });
+  progress(
+    `[scanWithAssembler] assembled — ${graph.nodes.length} node(s), ${graph.edges.length} edge(s)`,
+  );
+
+  progress("[scanWithAssembler] dispatching in-product face-off review");
+  const tFaceOff0 = Date.now();
+  const verdicts = await runFaceOffReview(graph, providerConfig, {
+    onProgress: progress,
+    ...(options.faceOffOptions ?? {}),
+  });
+  const faceOffElapsedMs = Date.now() - tFaceOff0;
+  graph.meta.faceOffVerdicts = verdicts;
+  progress(
+    `[scanWithAssembler] face-off review done in ${(faceOffElapsedMs / 1000).toFixed(1)}s — ` +
+      `${verdicts.length} verdict(s) recorded`,
+  );
+
+  // Write final knowledge-graph.json with verdicts embedded.
+  const intermediateDir = join(projectRoot, ".understand-anything", "intermediate");
+  mkdirSync(intermediateDir, { recursive: true });
+  const graphPath = join(intermediateDir, "knowledge-graph.json");
+  writeFileSync(graphPath, JSON.stringify(graph, null, 2));
+
+  return {
+    ...phase3,
+    graph,
+    graphPath,
+    faceOffElapsedMs,
   };
 }

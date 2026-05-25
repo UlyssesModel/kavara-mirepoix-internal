@@ -80,11 +80,19 @@ export interface KnowledgeGraph {
   nodes: GraphNode[];
   edges: GraphEdge[];
   layers: ArchitecturalLayer[];
+  /** Business-domain aggregation. Each architectural layer belongs to exactly
+   *  one domain; each domain's `fileIds` is the union of its member layers'
+   *  files. v0 contract owned by the upstream domain-analyzer phase. */
+  domains: BusinessDomain[];
   tour: TourStep[];
   meta: {
     generatedAt: string;
     generatorVersion: string;
     schemaVersion: string;
+    /** In-product face-off review audit trail. Each entry is one reviewer's
+     *  verbatim verdict on the assembled graph (per ADR-013). v0 surfaces
+     *  verdicts to the caller; does not auto-remediate on block. */
+    faceOffVerdicts: FaceOffVerdict[];
   };
 }
 
@@ -133,12 +141,25 @@ export interface PortResult {
   faceOffVerdicts: FaceOffVerdict[];
 }
 
-/** Face-off review verdict from one reviewer. */
+/** Face-off review verdict from one reviewer. v0 audit-trail shape — recorded
+ *  verbatim in KnowledgeGraph.meta.faceOffVerdicts[] when the in-product
+ *  face-off review runs against the assembled graph (per ADR-013). The two
+ *  canonical reviewer identities in v0 are "claude-reviewer" (completeness +
+ *  contract enforcement) and "codex-adversarial" (failure-mode probing); the
+ *  union widens to `string` because the reviewer roster grows over time
+ *  ("codestral", "granite") without locking the audit-trail consumers. */
 export interface FaceOffVerdict {
-  reviewer: "claude" | "codex" | "codestral" | "granite" | string;
+  reviewer: "claude-reviewer" | "codex-adversarial" | string;
   verdict: "approve" | "block";
+  /** The reviewer's findings text, verbatim. Never paraphrased — operators
+   *  audit the trail and need the raw output. */
   notes: string;
-  dispatchId: string;
+  /** ACP session id for trace-back into the @mirepoix/acp session log. */
+  acpSessionId: string;
+  /** Wall-clock for this reviewer's session (initialize → end_turn). */
+  durationMs: number;
+  /** ISO 8601 timestamp recorded at session start. */
+  timestamp: string;
 }
 
 // =============================================================================
