@@ -16,13 +16,23 @@
 //   Writes file-analyses.json with one record per analyzed file (combining
 //   deterministic structural data + LLM summary/complexity).
 //
-// Subsequent commits will add architecture-analyzer, domain-analyzer,
-// assembler face-off, graph-reviewer face-off, tour-builder, and the
-// full runUnderstand() composition.
+//   scanWithArchitecture(projectRoot, providerConfig, options?) —
+//   scanWithFileAnalyses + the first SYNTHESIS-pass LLM phase (single
+//   architecture-analyzer session). Writes architecture.json with the
+//   normalized ArchitecturalLayer[] — every code file is in exactly one
+//   layer's fileIds.
+//
+// Subsequent commits will add domain-analyzer, assembler face-off,
+// graph-reviewer face-off, tour-builder, and the full runUnderstand() composition.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  type ArchitectureAnalyzerResult,
+  type RunArchitectureAnalyzerOptions,
+  runArchitectureAnalyzer,
+} from "./llm/architecture-analyzer";
 import {
   type BatchAnalysisResult,
   type FileAnalysis,
@@ -36,6 +46,7 @@ import {
   type RunProjectScannerOptions,
   runProjectScanner,
 } from "./llm/project-scanner";
+import type { ArchitecturalLayer } from "./types";
 import {
   type BatchesResult,
   type ImportMapResult,
@@ -294,5 +305,104 @@ export async function scanWithFileAnalyses(
     batchesSucceeded,
     batchesFailed,
     fileAnalysesPath,
+  };
+}
+
+export interface ScanWithArchitectureOptions extends ScanWithFileAnalysesOptions {
+  /** Per-call knobs for the architecture-analyzer LLM phase. */
+  architectureOptions?: RunArchitectureAnalyzerOptions;
+}
+
+/** Output of `scanWithArchitecture` — everything from scanWithFileAnalyses
+ *  plus the architectural-layer synthesis. */
+export interface ScanWithArchitectureResult extends ScanWithFileAnalysesResult {
+  /** Normalized architectural layers — every input file appears in exactly
+   *  one layer's fileIds. */
+  layers: ArchitecturalLayer[];
+  /** Diagnostic anomalies from layer normalization (unassigned files,
+   *  unassigned/duplicate/unknown directory groups, unusual layer IDs). */
+  architectureAnomalies: ArchitectureAnalyzerResult["anomalies"];
+  /** Number of directory groups the LLM was asked to assign in this run. */
+  architectureGroupCount: number;
+  /** Wall-clock for the architecture-analyzer LLM call alone. */
+  architectureElapsedMs: number;
+  /** Absolute path of the architecture.json written. */
+  architecturePath: string;
+}
+
+/**
+ * Run the full pipeline through the architecture-analyzer synthesis phase.
+ *
+ * Behavior:
+ *   - Composes scanWithFileAnalyses (deterministic + narrative + per-file
+ *     fan-out) and feeds its output into runArchitectureAnalyzer.
+ *   - Architecture-analyzer is a SINGLE @mirepoix/acp session (synthesis pass,
+ *     not parallelizable).
+ *   - Writes `<projectRoot>/.understand-anything/intermediate/architecture.json`
+ *     with the normalized layer set.
+ *
+ * Contract:
+ *   - Every file in `scan.files` appears in exactly one layer's fileIds
+ *     (uniqueness enforced post-hoc by runArchitectureAnalyzer's normalizer;
+ *     unassigned files are swept into a synthetic "layer:shared").
+ *
+ * Failure modes:
+ *   - If the LLM session fails or the response can't be parsed,
+ *     runArchitectureAnalyzer throws. Unlike file-analyzer (which isolates
+ *     per-batch failures), there is only one session here — its failure is
+ *     fatal to this call. The deterministic + narrative + file-analyses
+ *     artifacts already on disk remain valid.
+ */
+export async function scanWithArchitecture(
+  projectRoot: string,
+  providerConfig: ProviderConfig,
+  options: ScanWithArchitectureOptions = {},
+): Promise<ScanWithArchitectureResult> {
+  const progress = options.onProgress ?? ((line: string) => process.stderr.write(`${line}\n`));
+  const phase1 = await scanWithFileAnalyses(projectRoot, providerConfig, options);
+
+  progress(
+    `[scanWithArchitecture] running architecture-analyzer over ${phase1.scan.files.length} files (${phase1.filesAnalyzed} with per-file analysis)`,
+  );
+
+  const tArch0 = Date.now();
+  const archResult = await runArchitectureAnalyzer(
+    {
+      files: phase1.scan.files,
+      fileAnalyses: phase1.fileAnalyses,
+      narrative: phase1.narrative,
+      importMap: phase1.importMap.importMap,
+    },
+    providerConfig,
+    options.architectureOptions,
+  );
+  const tArchElapsed = Date.now() - tArch0;
+  progress(
+    `[scanWithArchitecture] architecture-analyzer done in ${(tArchElapsed / 1000).toFixed(1)}s — ${archResult.layers.length} layer(s)`,
+  );
+
+  const intermediateDir = join(projectRoot, ".understand-anything", "intermediate");
+  mkdirSync(intermediateDir, { recursive: true });
+  const architecturePath = join(intermediateDir, "architecture.json");
+  writeFileSync(
+    architecturePath,
+    JSON.stringify(
+      {
+        scriptCompleted: true,
+        layers: archResult.layers,
+        anomalies: archResult.anomalies,
+      },
+      null,
+      2,
+    ),
+  );
+
+  return {
+    ...phase1,
+    layers: archResult.layers,
+    architectureAnomalies: archResult.anomalies,
+    architectureGroupCount: archResult.groupCount,
+    architectureElapsedMs: archResult.elapsedMs,
+    architecturePath,
   };
 }

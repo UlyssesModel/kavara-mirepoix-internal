@@ -37,6 +37,7 @@ import { join } from "node:path";
 import { type BatchEntry, type ExtractStructureResult, runExtractStructure } from "../scripts";
 import { AcpClient, type AcpClientOptions } from "./acp-client";
 import type { ProviderConfig } from "./project-scanner";
+import { extractJsonObject } from "./util";
 
 /** LLM-derived narrative for a single file. */
 interface FileNarrativeFields {
@@ -495,41 +496,4 @@ function extractFunctions(v: unknown): Array<{ name: string; startLine: number; 
 function extractClasses(v: unknown): Array<{ name: string; startLine: number; endLine: number }> {
   // classes have the same shape we care about.
   return extractFunctions(v);
-}
-
-/**
- * Brace-aware JSON-object extractor. Same shape as Commit 4's project-scanner:
- * scans for the first `{`, finds its matching `}` while respecting strings +
- * escapes. JSON has no comments/regex literals so this is sufficient.
- */
-function extractJsonObject(text: string): string | null {
-  const start = text.indexOf("{");
-  if (start === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escape) {
-        escape = false;
-      } else if (ch === "\\") {
-        escape = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") {
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  return null;
 }

@@ -24,6 +24,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { AcpClient, type AcpClientOptions } from "./acp-client";
+import { extractJsonObject } from "./util";
 
 /** The four narrative fields the LLM phase produces. Merges into scan-result.json. */
 export interface ProjectNarrative {
@@ -288,47 +289,6 @@ function parseNarrative(text: string, fallbackName: string): ProjectNarrative {
     throw new Error("project-scanner: missing or empty `description` field in LLM output");
   }
   return { name, description, frameworks, languages };
-}
-
-/**
- * Locate a JSON object inside `text` by scanning for the first `{` and finding
- * its matching `}` via a brace-depth counter that respects string literals
- * (so braces inside strings don't break the count).
- *
- * Why not a regex: nested objects and braces-in-strings both bite a naive
- * `/\{.*\}/s` match. Why not full JSON parse-from-start: the model often
- * prefixes prose ("Here's the JSON:") even when told not to.
- */
-function extractJsonObject(text: string): string | null {
-  const start = text.indexOf("{");
-  if (start === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escape) {
-        escape = false;
-      } else if (ch === "\\") {
-        escape = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") {
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  return null;
 }
 
 function normalizeStringArray(v: unknown): string[] {
