@@ -28,6 +28,10 @@
 // supporting nodes); the split is more semantically meaningful than a single
 // flat node list and matches Commit 4-7's pattern of having the LLM emit
 // exactly the shape we want to record. Step ordering MUST be sequential 1..12.
+// If the LLM falls back to emitting the upstream agent's flat `nodeIds` array
+// instead, the normalizer maps every entry to `primaryNodeIds` (all entries
+// represent equal focus nodes in the upstream contract — per round-2 Codex
+// finding #8) and leaves `relatedNodeIds` empty.
 //
 // Normalization (analogous to architecture-analyzer + domain-analyzer):
 //   - Dedupe step.order: first occurrence wins; subsequent duplicates discarded
@@ -366,10 +370,11 @@ function buildTourPrompt(
     "  even when steps cover related areas. A node may appear in `relatedNodeIds`",
     "  of multiple steps, but its appearance as PRIMARY must be unique across the tour.",
     "- The Step 1 PRIMARY node MUST be a README / overview document when one is",
-    "  available in the candidate hubs (look for `type=document` or a README.md path",
-    "  at the project root). If no such node exists, pick the top-scoring code entry",
-    "  point (index / main / app). Do NOT pick an orchestration / pipeline file as",
-    "  the Step 1 primary if a project-overview document is available.",
+    "  available in the candidate hubs (look for `type=document`, a root README.md /",
+    "  README.mdx path, or an extensionless `README` file at the project root).",
+    "  If no such node exists, pick the top-scoring code entry point (index / main /",
+    "  app). Do NOT pick an orchestration / pipeline file as the Step 1 primary if a",
+    "  project-overview document is available.",
     "- Steps MUST tell a story — start with the project overview (README-like / entry",
     "  point), then move to core types / config, then feature modules, then supporting",
     "  infrastructure. Group tightly-coupled nodes into a single step where appropriate.",
