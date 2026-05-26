@@ -1,13 +1,13 @@
 {
   "name": "@mirepoix/understand",
-  "version": "0.0.1",
+  "version": "0.2.0-alpha-3a",
   "description": "Mirepoix-native codebase comprehension orchestrator. Wraps Lum1104s Understand-Anything multi-agent pipeline using @mirepoix/acp parallel sessions on local Qwen instead of Claude Code Task tool dispatch. Output is schema-compatible with the upstream Understand-Anything React dashboard. First building block of @mirepoix/modernize.",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "bin": {
-    "mirepoix-understand": "./src/index.ts"
+    "mirepoix-understand": "./src/bin/understand.ts"
   },
   "dependencies": {
     "@mirepoix/ai": "workspace:*",
