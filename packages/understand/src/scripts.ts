@@ -149,6 +149,31 @@ export async function ensureUpstreamBuilt(): Promise<void> {
     return;
   }
 
+  // Two upstream install layouts exist and the pnpm-workspace.yaml lives in
+  // different places in each:
+  //   Marketplace install (editable git checkout): workspace root is ONE LEVEL
+  //     UP from the plugin (`marketplaces/understand-anything/pnpm-workspace.yaml`
+  //     declares `understand-anything-plugin/packages/*`, `understand-anything-plugin`,
+  //     and `homepage`).
+  //   Cache install (frozen runtime copy): the plugin dir IS the workspace root
+  //     (`cache/.../<version>/pnpm-workspace.yaml` declares `packages/*` only;
+  //     the plugin's package.json sits at the root).
+  // Pick the right workspace root by probing pluginRoot first, then pluginRoot/..
+  // Resolved BEFORE the F2 opt-in throw so the diagnostic can print the exact
+  // `cd` target operators need for the manual-build path.
+  let workspaceRoot: string;
+  if (existsSync(resolve(pluginRoot, "pnpm-workspace.yaml"))) {
+    workspaceRoot = pluginRoot;
+  } else if (existsSync(resolve(pluginRoot, "..", "pnpm-workspace.yaml"))) {
+    workspaceRoot = resolve(pluginRoot, "..");
+  } else {
+    throw new Error(
+      `@mirepoix/understand: could not locate pnpm-workspace.yaml at ${pluginRoot} ` +
+        "or one level up. The upstream layout may have changed; review " +
+        "ensureUpstreamBuilt in scripts.ts.",
+    );
+  }
+
   // F2: do NOT run pnpm install in the normal scan path. The deterministic
   // scan must not perform hidden package-manager operations — incompatible
   // with Mirepoix-secure's deny-all-egress posture (ADR-010) and surprising
@@ -163,35 +188,13 @@ export async function ensureUpstreamBuilt(): Promise<void> {
         "auto-build is OFF (default). Missing:\n" +
         missing.map((p) => `  - ${p}`).join("\n") +
         "\n\nResolve by either:\n" +
-        `  1. Pre-build manually in the plugin workspace: \`pnpm install --filter ` +
-        `@understand-anything/skill... --frozen-lockfile && pnpm --filter ` +
-        `@understand-anything/core build\`, OR\n` +
+        "  1. Pre-build manually (run these in order):\n" +
+        `       cd ${workspaceRoot}\n` +
+        "       pnpm install --filter @understand-anything/skill... --frozen-lockfile\n" +
+        "       pnpm --filter @understand-anything/core build\n" +
         "  2. Set MIREPOIX_UNDERSTAND_AUTO_BUILD=1 to allow @mirepoix/understand to run pnpm " +
         "itself. This is OFF by default because the install operation has potential network " +
         "egress, incompatible with Mirepoix-secure's deny-all-egress posture (ADR-010).",
-    );
-  }
-
-  // Two upstream install layouts exist and the pnpm-workspace.yaml lives in
-  // different places in each:
-  //   Marketplace install (editable git checkout): workspace root is ONE LEVEL
-  //     UP from the plugin (`marketplaces/understand-anything/pnpm-workspace.yaml`
-  //     declares `understand-anything-plugin/packages/*`, `understand-anything-plugin`,
-  //     and `homepage`).
-  //   Cache install (frozen runtime copy): the plugin dir IS the workspace root
-  //     (`cache/.../<version>/pnpm-workspace.yaml` declares `packages/*` only;
-  //     the plugin's package.json sits at the root).
-  // Pick the right workspace root by probing pluginRoot first, then pluginRoot/..
-  let workspaceRoot: string;
-  if (existsSync(resolve(pluginRoot, "pnpm-workspace.yaml"))) {
-    workspaceRoot = pluginRoot;
-  } else if (existsSync(resolve(pluginRoot, "..", "pnpm-workspace.yaml"))) {
-    workspaceRoot = resolve(pluginRoot, "..");
-  } else {
-    throw new Error(
-      `@mirepoix/understand: could not locate pnpm-workspace.yaml at ${pluginRoot} ` +
-        "or one level up. The upstream layout may have changed; review " +
-        "ensureUpstreamBuilt in scripts.ts.",
     );
   }
 

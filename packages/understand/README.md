@@ -143,20 +143,30 @@ for a "deterministic" phase.
 
 If the upstream artifacts are missing, you have two choices:
 
-1. **Pre-build manually** (recommended on Mirepoix-secure):
-   ```bash
-   cd "$(dirname "$(resolveUpstreamSkillsDir)")"   # the upstream workspace root
-   pnpm install --filter @understand-anything/skill... --frozen-lockfile
-   pnpm --filter @understand-anything/core build
-   ```
-2. **Opt-in to auto-build** (Mirepoix-build / dev):
+1. **Opt-in to auto-build** (Mirepoix-build / dev — simplest):
    ```bash
    MIREPOIX_UNDERSTAND_AUTO_BUILD=1 mirepoix-understand <projectRoot>
    ```
-   Same effect as (1), executed inside `ensureUpstreamBuilt`.
+   Runs `pnpm install --filter @understand-anything/skill... --frozen-lockfile`
+   followed by `pnpm --filter @understand-anything/core build` inside the
+   resolved upstream workspace. Artifacts persist on disk, so subsequent runs
+   without the env var hit the fast-path early-return.
+
+2. **Pre-build manually** (recommended on Mirepoix-secure):
+   Run `mirepoix-understand <projectRoot>` once with auto-build OFF. The
+   diagnostic prints the exact workspace root to `cd` into plus the two
+   `pnpm` commands. Equivalent shape, with `<workspaceRoot>` resolved by the
+   tool:
+   ```bash
+   cd <workspaceRoot>   # printed by the diagnostic
+   pnpm install --filter @understand-anything/skill... --frozen-lockfile
+   pnpm --filter @understand-anything/core build
+   ```
+   Re-run `mirepoix-understand` afterwards — the fast-path will skip
+   `ensureUpstreamBuilt`'s auto-build branch entirely.
 
 The error message that fires when auto-build is OFF and artifacts are missing
-lists the exact missing paths and both remediation options.
+lists the exact missing paths AND the resolved workspace-root `cd` target.
 
 Inside the monorepo, the same entry is reachable as:
 
