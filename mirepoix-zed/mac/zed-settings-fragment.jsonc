@@ -1,0 +1,15 @@
+{
+  // Paste this fragment into your global Zed settings.json (Cmd + ,)
+  "agent_servers": {
+    "Mirepoix": {
+      // Path to the local Mac SSH-bridge wrapper script
+      "command": "/Users/jekavara/code/kavara/kavara-mirepoix-internal/mirepoix-zed/mac/mirepoix-acp-zed.sh",
+      "args": [],
+      // Optional environment overrides for one-off retargeting
+      "env": {
+        // "OLLAMA_URL": "http://127.0.0.1:11434/v1",
+        // "MIREPOIX_MODEL": "qwen3-coder:30b"
+      }
+    }
+  }
+}
