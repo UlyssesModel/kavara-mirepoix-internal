@@ -21,7 +21,9 @@ fi
 
 # Ensure logging directory exists
 mkdir -p "$HOME/.mirepoix/acp-logs"
-log_file="$HOME/.mirepoix/acp-logs/acp.log"
+timestamp=$(date +%Y%m%d-%H%M%S)
+pid=$$
+log_file="$HOME/.mirepoix/acp-logs/acp-${timestamp}-${pid}.log"
 
 # Navigate to the workspace root
 cd /home/jekavara/workspaces/kavara-mirepoix-internal || exit 1
