@@ -1,0 +1,13 @@
+#!/bin/bash
+# Pre-push hook: Local Workspace -> Bridge Bare Repository
+# Auto-syncs local main commits to the bridge bare repo when pushing to GitHub.
+
+remote="$1"
+url="$2"
+
+# Only sync main branch pushes targetting GitHub (origin or mirepoix)
+if [[ "$remote" == "origin" || "$remote" == "mirepoix" ]]; then
+  echo "Mirepoix-Sync: Auto-syncing local main to bridge bare repository..." >&2
+  # Push main to bridge bare repo (with --no-verify to prevent recurse)
+  git push bridge main:main --force --no-verify >&2
+fi

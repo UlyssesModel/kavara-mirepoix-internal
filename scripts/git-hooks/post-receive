@@ -1,0 +1,54 @@
+#!/bin/bash
+# Post-receive hook: Bridge -> GitHub & Local Workspace
+# Triggered when bridge bare repo receives a push (e.g. from scotty-gpu).
+
+while read oldrev newrev refname; do
+  if [[ "$refname" == "refs/heads/main" ]]; then
+    echo "Mirepoix-Bridge: refs/heads/main updated from $oldrev to $newrev."
+    
+    # Check if the push originated from scotty-gpu (10.128.0.16)
+    # This prevents local developer pushes (which inherit the active developer SSH session vars)
+    # from triggering redundant GitHub pushes and workspace syncs.
+    is_scotty_push=false
+    if [[ "$SSH_CONNECTION" =~ ^10\.128\.0\.16[[:space:]] ]] || [[ "$SSH_CLIENT" =~ ^10\.128\.0\.16[[:space:]] ]]; then
+      is_scotty_push=true
+    fi
+    
+    if [ "$is_scotty_push" = true ]; then
+      # 1. Propagate changes out to GitHub remotes
+      echo "Mirepoix-Bridge: Push from scotty-gpu detected. Propagating main to GitHub (github remote)..."
+      git push github main || echo "Warning: failed to push to GitHub (github remote)" >&2
+      
+      if git remote | grep -q "^mirepoix$"; then
+        echo "Mirepoix-Bridge: Propagating main to GitHub (mirepoix remote)..."
+        git push mirepoix main || echo "Warning: failed to push to GitHub (mirepoix remote)" >&2
+      fi
+      
+      # 2. Synchronize local builder workspace (if clean and on main)
+      WORKSPACE_DIR="/home/jekavara/workspaces/kavara-mirepoix-internal"
+      if [ -d "$WORKSPACE_DIR" ]; then
+        echo "Mirepoix-Bridge: Syncing changes into local builder workspace..."
+        
+        # Subshell to isolate unsetting of Git environment variables
+        (
+          unset GIT_DIR GIT_WORK_TREE
+          git -C "$WORKSPACE_DIR" fetch bridge || true
+          
+          # Check if workspace is clean (no uncommitted changes)
+          if git -C "$WORKSPACE_DIR" diff-index --quiet HEAD --; then
+            current_branch=$(git -C "$WORKSPACE_DIR" symbolic-ref --short HEAD 2>/dev/null)
+            if [[ "$current_branch" == "main" ]]; then
+              git -C "$WORKSPACE_DIR" merge --ff-only bridge/main || echo "Warning: FF-merge of bridge/main failed" >&2
+            else
+              echo "Warning: local workspace is not on 'main' branch (active: $current_branch). Skipped merge." >&2
+            fi
+          else
+            echo "Warning: local workspace has uncommitted changes. Skipped merge to prevent conflicts." >&2
+          fi
+        )
+      fi
+    else
+      echo "Mirepoix-Bridge: Local/Developer push detected. Skipping GitHub propagation and workspace sync."
+    fi
+  fi
+done
