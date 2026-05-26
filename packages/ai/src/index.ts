@@ -24,5 +24,5 @@ export type { ProviderConfig, AssistantMessage } from "./provider";
  * a regex cannot. See rehydrate.ts (spike lines 179-217).
  */
 export { extractJsonObjects, tryParseToolCallsFromContent } from "./rehydrate";
-// Dummy change to verify symmetric Git sync hooks (May 26, 2026)
+// Dummy change to verify symmetric Git sync hooks (May 26, 2026) - Round 2
 
