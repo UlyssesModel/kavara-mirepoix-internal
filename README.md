@@ -1,4 +1,4 @@
-# Kavara-Mirepoix Internal
+# Mirepoix Internal
 
 [![CI](https://github.com/UlyssesModel/kavara-mirepoix-internal/actions/workflows/ci.yml/badge.svg)](https://github.com/UlyssesModel/kavara-mirepoix-internal/actions/workflows/ci.yml)
 
