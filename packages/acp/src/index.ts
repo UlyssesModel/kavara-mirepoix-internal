@@ -71,9 +71,16 @@ class MirepoixAgent implements Agent {
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
     });
 
+    let cwd = params.cwd ?? process.cwd();
+    const macPrefix = "/Users/jekavara/code/kavara/";
+    const linuxPrefix = "/home/jekavara/workspaces/";
+    if (cwd.startsWith(macPrefix)) {
+      cwd = linuxPrefix + cwd.slice(macPrefix.length);
+    }
+
     this.sessions.set(sessionId, {
       mirepoixSession,
-      cwd: params.cwd ?? process.cwd(),
+      cwd,
       abortController: null,
     });
 
