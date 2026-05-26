@@ -9,4 +9,4 @@ export GEMINI_API_KEY="$(gcloud auth print-access-token)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Execute the bun script directly to preserve process lifecycle signals
-exec bun "$SCRIPT_DIR/../packages/acp/src/index.ts"
+exec "$HOME/.bun/bin/bun" "$SCRIPT_DIR/../packages/acp/src/index.ts"
