@@ -16,6 +16,7 @@ build/
 # session logs (local dev)
 .pi/
 sessions/
+.on-loop/
 *.session.jsonl
 
 # editor / OS
@@ -40,3 +41,6 @@ pnpm-debug.log*
 node_modules/
 packages/*/dist/
 *.tsbuildinfo
+
+# Understand-Anything output (knowledge graph + intermediate files)
+.understand-anything/
