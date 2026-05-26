@@ -11,6 +11,7 @@ export MIREPOIX_PROVIDER="ollama"
 export MIREPOIX_MODEL="qwen3-coder:30b"
 export OLLAMA_URL="http://127.0.0.1:11434/v1"
 export OLLAMA_BASE_URL="http://127.0.0.1:11434/v1"
+export PATH="$HOME/.bun/bin:$PATH"
 
 # Fail fast with EX_UNAVAILABLE (69) if the local Ollama instance is down
 if ! curl -sf http://127.0.0.1:11434/ >/dev/null 2>&1; then
