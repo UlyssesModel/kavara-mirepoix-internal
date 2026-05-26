@@ -259,20 +259,36 @@ function computeCandidateHubs(graph: KnowledgeGraph, topN: number): CandidateHub
     // import edges at all). README at the project root is the canonical
     // tour-step-1 anchor and gets a large boost so it out-scores typical
     // import hubs on monorepos with ~10 internal imports per file.
+    //
+    // Round-3 Probe #5 refinement: the README boost is now gated by the
+    // extension (`.md` / `.mdx`) so a project-root file named `readme.ts` or
+    // `readme.sh` doesn't accidentally inherit the documentation boost. The
+    // canonical `README.md` filename gets +21 (a hair above other root
+    // README.md variants like `README.zh.md` at +20) so localized translations
+    // never out-rank the canonical English overview at Step 1 selection.
     const isDocumentType = n.type === "document";
     const pathIsRoot = !n.path.includes("/");
     const filename = n.name;
-    const isReadmeBasename = /^readme(\.|$)/i.test(filename);
-    const isRootReadme = pathIsRoot && isReadmeBasename;
-    const isRootMarkdown = pathIsRoot && /\.md$/i.test(filename);
+    const filenameLower = filename.toLowerCase();
+    const isMarkdownExt = /\.(md|mdx)$/i.test(filename);
+    const isReadmeMarkdown = isMarkdownExt && /^readme[.\-_]/i.test(filename);
+    const isCanonicalReadme = filenameLower === "readme.md";
+    const isRootReadmeMarkdown = pathIsRoot && isReadmeMarkdown;
+    const isRootOtherMarkdown = pathIsRoot && isMarkdownExt && !isReadmeMarkdown;
     const isEntryPointName = /^(index|main|app|server)\.(ts|tsx|js|jsx|py|go|rs)$/i.test(filename);
 
     let scoreBoost = 0;
-    if (isRootReadme)
-      scoreBoost += 20; // out-scores typical fan-in hubs
-    else if (isReadmeBasename) scoreBoost += 10;
-    else if (isRootMarkdown) scoreBoost += 6;
-    else if (isDocumentType) scoreBoost += 4;
+    if (pathIsRoot && isCanonicalReadme) {
+      scoreBoost += 21; // canonical English README — preferred Step 1 anchor
+    } else if (isRootReadmeMarkdown) {
+      scoreBoost += 20; // other root README markdown variants (README.zh.md, etc.)
+    } else if (isReadmeMarkdown) {
+      scoreBoost += 10; // README markdown nested in a subdirectory
+    } else if (isRootOtherMarkdown) {
+      scoreBoost += 6; // other root markdown files (CHANGELOG.md, etc.)
+    } else if (isDocumentType) {
+      scoreBoost += 4; // any document-type node not already boosted above
+    }
     if (isEntryPointName) scoreBoost += 4;
 
     const hubScore = fi * 2 + fo + scoreBoost;
@@ -519,11 +535,15 @@ function normalizeTourSteps(
     return out;
   };
 
-  // Order-insensitive key over primaryNodeIds. Using a sorted-join lets two
-  // steps with the same {A, B} set but different array order register as a
-  // duplicate; the customer would experience them as "the same step
+  // Order-insensitive key over primaryNodeIds. Using a sorted JSON.stringify
+  // lets two steps with the same {A, B} set but different array order register
+  // as a duplicate; the customer would experience them as "the same step
   // appearing twice" regardless of how the LLM happened to order the ids.
-  const primaryKey = (ids: readonly string[]): string => [...ids].sort().join("");
+  // Round-3 Probe #4 refinement: JSON.stringify is collision-resistant even
+  // for adversarial inputs like `["a","bc"]` vs `["ab","c"]`, which a naive
+  // `.join("")` would conflate. Real node ids can't collide that way, but
+  // collision-proofing the dedup key is cheap defense.
+  const primaryKey = (ids: readonly string[]): string => JSON.stringify([...ids].sort());
 
   // Sort RAW steps by order BEFORE dedup so the "earlier wins" rule operates
   // on the LLM-intended sequence (the input list might arrive out of order).

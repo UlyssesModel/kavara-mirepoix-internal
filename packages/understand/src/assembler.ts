@@ -448,9 +448,10 @@ function basename(path: string): string {
 /**
  * Build a stable, collision-resistant node id for a function / class symbol.
  *
- * Shape: `<kind>:<path>:<name>:<kind>` for the first occurrence, then
- * `<kind>:<path>:<name>:<kind>#<n>` (n ≥ 2) for subsequent same-kind same-name
- * occurrences in the same file (overload disambiguation per finding #5).
+ * Shape: `<kind>:<escapedPath>:<escapedName>:<kind>` for the first occurrence,
+ * then `<kind>:<escapedPath>:<escapedName>:<kind>#<n>` (n ≥ 2) for subsequent
+ * same-kind same-name occurrences in the same file (overload disambiguation
+ * per finding #5).
  *
  * The kind appears at BOTH ends of the id deliberately:
  *   - Leading `<kind>:` matches upstream Understand-Anything's ID convention
@@ -463,17 +464,20 @@ function basename(path: string): string {
  * The `#<n>` suffix is only appended when the deterministic base would
  * collide — most ids in any given codebase have no suffix at all.
  *
- * Field safety (Commit 9 / round-2 Codex findings #1 + #10): the id format
- * is raw colon-delimited. A `:` in `path` or `name` would collapse field
+ * Field safety (Commit 9 / round-2 Codex findings #1 + #10, refined in
+ * round-3 Probes #1 + #7): a `:` in `path` or `name` would collapse field
  * boundaries and let two distinct symbols generate the same baseId fragment;
  * the cross-file `nodeIds.has` guard below would then treat them as
- * overloads of each other and emit unstable `#n` ids. Project-relative
- * paths from `scan-project.mjs` use forward slashes and never contain `:`,
- * and function/class names from the file-analyzer LLM phase are restricted
- * to identifier characters — but rather than trust the upstream invariant
- * implicitly, we assert it explicitly at the call site and throw with a
- * descriptive error if either input has a colon. Catches a regression at
- * its origin instead of letting it corrupt the audit trail.
+ * overloads of each other and emit unstable `#n` ids. Round-2 enforced this
+ * via a fatal throw on any colon, but POSIX paths can legitimately contain
+ * `:` (a file literally named `src/foo:bar.ts` is valid on Linux/macOS) and
+ * the upstream Ruby extractor emits class names like `Foo::Bar`. Round-3
+ * switches to percent-encoding: any `%` becomes `%25`, then any `:` becomes
+ * `%3A`. The order matters (encode `%` first to avoid double-encoding the
+ * substitution sequence). The encoded baseId is field-safe — distinct
+ * (path, name) tuples produce distinct baseIds because the encoding is
+ * injective — and round-tripping is trivial (URI percent-decoding) for any
+ * downstream consumer that needs the original strings.
  */
 function buildSymbolNodeId(
   path: string,
@@ -482,31 +486,19 @@ function buildSymbolNodeId(
   occurrenceCount: Map<string, number>,
   nodeIds: ReadonlySet<string>,
 ): string {
-  if (path.includes(":")) {
-    throw new Error(
-      `buildSymbolNodeId: path "${path}" contains ":". File paths are colon-free by upstream ` +
-        "convention; a colon would collapse the symbol-id field separators and let unrelated " +
-        "symbols collide. Surface the upstream regression at scan-project.mjs.",
-    );
-  }
-  if (name.includes(":")) {
-    throw new Error(
-      `buildSymbolNodeId: ${kind} name "${name}" in "${path}" contains ":". Symbol names are ` +
-        "colon-free by upstream convention; a colon would collapse the symbol-id field separators " +
-        "and let unrelated symbols collide. Surface the upstream regression at the file-analyzer.",
-    );
-  }
-  const key = `${kind}:${name}`;
-  const baseId = `${kind}:${path}:${name}:${kind}`;
+  const safePath = escapeIdField(path);
+  const safeName = escapeIdField(name);
+  const key = `${kind}:${safeName}`;
+  const baseId = `${kind}:${safePath}:${safeName}:${kind}`;
   const prior = occurrenceCount.get(key) ?? 0;
   occurrenceCount.set(key, prior + 1);
   if (prior === 0) {
-    // First occurrence of (kind, name) in this file. With the colon-free
-    // assertion above, baseId is field-safe — no cross-file collision can
-    // exist that wasn't itself a duplicate-id contract violation. If
-    // nodeIds already contains baseId, surface as a fatal invariant
-    // violation rather than silently re-labelling as an overload (which
-    // would mislead downstream consumers indexing by `#n`).
+    // First occurrence of (kind, name) in this file. With injective field
+    // encoding, baseId is collision-free across (path, name) tuples — no
+    // cross-file collision can exist that wasn't itself a duplicate-id
+    // contract violation. If nodeIds already contains baseId, surface as a
+    // fatal invariant violation rather than silently re-labelling as an
+    // overload (which would mislead downstream consumers indexing by `#n`).
     if (nodeIds.has(baseId)) {
       throw new Error(
         `buildSymbolNodeId: cross-file id collision on "${baseId}". This should be impossible ` +
@@ -524,4 +516,16 @@ function buildSymbolNodeId(
   let next = prior + 1;
   while (nodeIds.has(`${baseId}#${next}`)) next += 1;
   return `${baseId}#${next}`;
+}
+
+/** Percent-encode the two characters that would otherwise collide field
+ *  boundaries in `<kind>:<path>:<name>:<kind>` symbol ids. `%` MUST be
+ *  encoded first; otherwise the `:` → `%3A` substitution introduces new
+ *  `%` characters that would themselves need encoding. The encoding is
+ *  injective on the input alphabet (every distinct input string produces
+ *  a distinct output) and trivially reversible via URI percent-decoding,
+ *  so downstream consumers that need the original strings can recover them.
+ */
+function escapeIdField(s: string): string {
+  return s.replaceAll("%", "%25").replaceAll(":", "%3A");
 }
