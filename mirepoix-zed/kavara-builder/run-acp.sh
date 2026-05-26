@@ -28,4 +28,4 @@ cd /home/jekavara/workspaces/kavara-mirepoix-internal || exit 1
 
 # Execute pnpm so the process replaces this script (preserving PID)
 # Stderr is teed to a rolling log
-exec pnpm --filter @mirepoix/acp run start:stdio 2> >(tee -a "$log_file" >&2)
+exec pnpm --silent --filter @mirepoix/acp run start:stdio 2> >(tee -a "$log_file" >&2)

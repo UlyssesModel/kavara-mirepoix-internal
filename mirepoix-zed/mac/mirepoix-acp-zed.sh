@@ -6,7 +6,8 @@
 # Setup ControlMaster socket directory for SSH multiplexing to reduce connection latency
 mkdir -p ~/.ssh/sockets 2>/dev/null
 
-exec ssh -T \
+exec ssh -T -q \
+  -o LogLevel=QUIET \
   -o BatchMode=yes \
   -o ServerAliveInterval=30 \
   -o ControlMaster=auto \
