@@ -14,7 +14,7 @@ export interface ProviderConfig {
 export interface AssistantMessage {
   role: string;
   content: string | null;
-  tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+  tool_calls?: Array<{ id: string; type?: string; function: { name: string; arguments: string } }>;
 }
 
 export async function callProvider(
@@ -22,16 +22,33 @@ export async function callProvider(
   tools: unknown[],
   config: ProviderConfig,
 ): Promise<AssistantMessage> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  const apiKey =
+    typeof process !== "undefined"
+      ? process.env.MIREPOIX_API_KEY ||
+        process.env.OPENAI_API_KEY ||
+        process.env.GEMINI_API_KEY
+      : undefined;
+
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
+  const body = {
+    model: config.model,
+    messages,
+    tools,
+    tool_choice: "auto",
+    temperature: 0.2,
+  };
+
   const res = await fetch(`${config.url}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      tools,
-      tool_choice: "auto",
-      temperature: 0.2,
-    }),
+    headers,
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -53,7 +70,7 @@ export function normalizeAssistantMessage(
   turn: number,
 ): {
   content: string | null;
-  toolCalls: Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
+  toolCalls: Array<{ id: string; type?: string; function: { name: string; arguments: string } }> | undefined;
   rehydrated: boolean;
 } {
   let toolCalls = msg.tool_calls;
@@ -64,6 +81,7 @@ export function normalizeAssistantMessage(
     if (parsed.length > 0) {
       toolCalls = parsed.map((p, i) => ({
         id: `call_${turn}_${i}`,
+        type: "function",
         function: { name: p.name, arguments: JSON.stringify(p.arguments) },
       }));
       assistantContent = null;

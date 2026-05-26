@@ -56,7 +56,8 @@ export function tryParseToolCallsFromContent(
     if (!obj || typeof obj !== "object") continue;
     const o = obj as Record<string, unknown>;
     if (typeof o.name !== "string") continue;
-    const args = (o.arguments ?? o.parameters ?? {}) as unknown;
+    if (o.arguments === undefined && o.parameters === undefined) continue;
+    const args = o.arguments ?? o.parameters;
     if (typeof args === "object" && args !== null) {
       calls.push({ name: o.name, arguments: args as Record<string, unknown> });
     }
