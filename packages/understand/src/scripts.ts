@@ -118,7 +118,16 @@ export function resolveUpstreamSkillsDir(): string {
  * v0 still produces valid output for downstream phases. Enabling native
  * tree-sitter builds is tracked as a follow-up.
  *
- * @throws if pnpm isn't on PATH or the build fails.
+ * Auto-build is OPT-IN via `MIREPOIX_UNDERSTAND_AUTO_BUILD=1`. When the env
+ * var is unset and the upstream artifacts are missing, this throws with a
+ * diagnostic instructing the operator to either pre-build manually or opt in.
+ * Reason: the auto-install path is a hidden package-manager operation with
+ * potential network egress, which is incompatible with Mirepoix-secure's
+ * deny-all-egress posture (ADR-010) and surprising for a "deterministic"
+ * scan phase. Closes Codex F2 from PR #38 round-1 face-off.
+ *
+ * @throws if pnpm isn't on PATH, the build fails, or auto-build is needed
+ *   but the operator has not opted in via MIREPOIX_UNDERSTAND_AUTO_BUILD=1.
  */
 export async function ensureUpstreamBuilt(): Promise<void> {
   const skillsDir = resolveUpstreamSkillsDir();
@@ -138,6 +147,29 @@ export async function ensureUpstreamBuilt(): Promise<void> {
 
   if (existsSync(coreDistEntry) && existsSync(graphologyEntry) && existsSync(louvainEntry)) {
     return;
+  }
+
+  // F2: do NOT run pnpm install in the normal scan path. The deterministic
+  // scan must not perform hidden package-manager operations — incompatible
+  // with Mirepoix-secure's deny-all-egress posture (ADR-010) and surprising
+  // for a "deterministic" phase. Require explicit opt-in via env var.
+  if (process.env.MIREPOIX_UNDERSTAND_AUTO_BUILD !== "1") {
+    const missing: string[] = [];
+    if (!existsSync(coreDistEntry)) missing.push(coreDistEntry);
+    if (!existsSync(graphologyEntry)) missing.push(graphologyEntry);
+    if (!existsSync(louvainEntry)) missing.push(louvainEntry);
+    throw new Error(
+      "@mirepoix/understand: upstream Understand-Anything plugin needs build artifacts but " +
+        "auto-build is OFF (default). Missing:\n" +
+        missing.map((p) => `  - ${p}`).join("\n") +
+        "\n\nResolve by either:\n" +
+        `  1. Pre-build manually in the plugin workspace: \`pnpm install --filter ` +
+        `@understand-anything/skill... --frozen-lockfile && pnpm --filter ` +
+        `@understand-anything/core build\`, OR\n` +
+        "  2. Set MIREPOIX_UNDERSTAND_AUTO_BUILD=1 to allow @mirepoix/understand to run pnpm " +
+        "itself. This is OFF by default because the install operation has potential network " +
+        "egress, incompatible with Mirepoix-secure's deny-all-egress posture (ADR-010).",
+    );
   }
 
   // Two upstream install layouts exist and the pnpm-workspace.yaml lives in

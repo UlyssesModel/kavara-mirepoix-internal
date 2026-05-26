@@ -15,6 +15,8 @@
 // downstream packages can drive directly when they only need a prefix of the
 // pipeline.
 
+import { resolve as resolvePath } from "node:path";
+
 import { scanWithGraph } from "./orchestrator";
 import type { KnowledgeGraph, Language, PerModuleSummary } from "./types";
 
@@ -91,8 +93,14 @@ export interface UnderstandConfig {
  * @returns KnowledgeGraph schema-compatible with the upstream React dashboard.
  */
 export async function runUnderstand(config: UnderstandConfig): Promise<KnowledgeGraph> {
+  // F4: normalize repoPath to an absolute path so the documented `repoPath`
+  // contract ("absolute path to the legacy codebase") is enforced for
+  // programmatic callers passing `.` or any other relative input. The CLI
+  // already resolves before calling runUnderstand; this protects direct API
+  // callers and keeps `KnowledgeGraph.project.rootPath` absolute as documented.
+  const repoPath = resolvePath(config.repoPath);
   const phaseOpts = config.acpEndpoint !== undefined ? { acpEntry: config.acpEndpoint } : {};
-  const result = await scanWithGraph(config.repoPath, config.providerConfig, {
+  const result = await scanWithGraph(repoPath, config.providerConfig, {
     concurrency: config.maxConcurrency,
     perBatch: phaseOpts,
     scannerOptions: phaseOpts,

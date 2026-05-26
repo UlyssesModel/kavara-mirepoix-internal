@@ -124,8 +124,39 @@ mirepoix-understand <projectRoot> [concurrency]
 # environment overrides:
 OLLAMA_URL=http://127.0.0.1:11434/v1
 MIREPOIX_MODEL=qwen3-coder:30b
-ACP_ENTRY=/abs/path/to/acp/entry   # rare
+ACP_ENTRY=/abs/path/to/acp/entry        # rare
+MIREPOIX_UNDERSTAND_AUTO_BUILD=1        # opt-in; see below
 ```
+
+### Upstream plugin build prerequisite
+
+The deterministic-scan phase shells out to upstream Understand-Anything's
+`.mjs` scripts, which need the plugin's workspace (`@understand-anything/core`
+dist + `graphology` / `graphology-communities-louvain` in
+`<pluginRoot>/node_modules/`) installed and built.
+
+`@mirepoix/understand` will **not** run `pnpm install` automatically by
+default — the install operation can perform network egress, which is
+incompatible with [ADR-010](../../adrs/ADR-010-mirepoix-secure-and-scotty-gpu-pilot.md)'s
+deny-all-egress posture on Mirepoix-secure and is a surprising side-effect
+for a "deterministic" phase.
+
+If the upstream artifacts are missing, you have two choices:
+
+1. **Pre-build manually** (recommended on Mirepoix-secure):
+   ```bash
+   cd "$(dirname "$(resolveUpstreamSkillsDir)")"   # the upstream workspace root
+   pnpm install --filter @understand-anything/skill... --frozen-lockfile
+   pnpm --filter @understand-anything/core build
+   ```
+2. **Opt-in to auto-build** (Mirepoix-build / dev):
+   ```bash
+   MIREPOIX_UNDERSTAND_AUTO_BUILD=1 mirepoix-understand <projectRoot>
+   ```
+   Same effect as (1), executed inside `ensureUpstreamBuilt`.
+
+The error message that fires when auto-build is OFF and artifacts are missing
+lists the exact missing paths and both remediation options.
 
 Inside the monorepo, the same entry is reachable as:
 

@@ -58,9 +58,9 @@
     },
     "packages/understand": {
       "name": "@mirepoix/understand",
-      "version": "0.0.1",
+      "version": "0.2.0-alpha-3a",
       "bin": {
-        "mirepoix-understand": "./src/index.ts",
+        "mirepoix-understand": "./src/bin/understand.ts",
       },
       "dependencies": {
         "@mirepoix/acp": "workspace:*",
