@@ -43,6 +43,28 @@ export function extractJsonObjects(text: string): unknown[] {
   return results;
 }
 
+export function tryParseXmlToolCalls(
+  content: string,
+): Array<{ name: string; arguments: Record<string, unknown> }> {
+  const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+  const funcRegex = /<function=(\w+)>([\s\S]*?)<\/function>/g;
+  let match;
+  while ((match = funcRegex.exec(content)) !== null) {
+    const name = match[1];
+    const innerContent = match[2];
+    const args: Record<string, unknown> = {};
+    const paramRegex = /<parameter=(\w+)>([\s\S]*?)<\/parameter>/g;
+    let paramMatch;
+    while ((paramMatch = paramRegex.exec(innerContent)) !== null) {
+      const key = paramMatch[1];
+      const value = paramMatch[2].trim();
+      args[key] = value;
+    }
+    calls.push({ name, arguments: args });
+  }
+  return calls;
+}
+
 export function tryParseToolCallsFromContent(
   content: string,
 ): Array<{ name: string; arguments: Record<string, unknown> }> {
@@ -62,5 +84,10 @@ export function tryParseToolCallsFromContent(
       calls.push({ name: o.name, arguments: args as Record<string, unknown> });
     }
   }
+  if (calls.length === 0) {
+    const xmlCalls = tryParseXmlToolCalls(content);
+    calls.push(...xmlCalls);
+  }
   return calls;
 }
+
