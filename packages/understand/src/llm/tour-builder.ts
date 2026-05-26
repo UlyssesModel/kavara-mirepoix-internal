@@ -73,8 +73,10 @@ export interface TourAnomalies {
   /** LLM-emitted step orders that duplicated an earlier step. Kept first;
    *  duplicates discarded. */
   duplicateOrders: number[];
-  /** Steps the normalizer dropped because primaryNodeIds was empty or
-   *  contained only ids not present in the graph. */
+  /** Steps the normalizer dropped because primaryNodeIds was empty,
+   *  contained only ids not present in the graph, or repeated the primary
+   *  node set of an earlier step (per round-2 Codex finding #7 — two tour
+   *  steps with the same primary mislead the customer reader). */
   droppedSteps: Array<{ order: number; reason: string }>;
   /** Node ids the LLM referenced that don't exist in the graph. Logged once
    *  per id; the offending step keeps its remaining valid ids. */
@@ -220,9 +222,16 @@ interface CandidateHub {
 
 /** Compute the most-imported + most-importing file nodes, plus README-like
  *  document nodes, as the candidate entry-point set for the tour. We only
- *  surface file-level nodes (file / config / document / service / pipeline)
- *  — function/class nodes are too granular for tour steps; their parent file
- *  is the right unit. */
+ *  surface file-level nodes (file / config / pipeline-step / document) —
+ *  function/class nodes are too granular for tour steps; their parent file
+ *  is the right unit.
+ *
+ *  Round-2 Codex finding #7 (boosted README priority): the v0 smoke run
+ *  produced a tour whose Step 1 "Project Overview" pointed at the orchestrator
+ *  file because no document-shaped node out-scored the import-graph hubs. The
+ *  scoring now boosts ROOT-LEVEL README.md hard enough that the tour-builder
+ *  has a real overview anchor available; the LLM may still ignore the
+ *  candidate, but at least it's at the top of the list when present. */
 function computeCandidateHubs(graph: KnowledgeGraph, topN: number): CandidateHub[] {
   const fanIn = new Map<string, number>();
   const fanOut = new Map<string, number>();
@@ -245,15 +254,29 @@ function computeCandidateHubs(graph: KnowledgeGraph, topN: number): CandidateHub
     if (!FILE_LEVEL_TYPES.has(n.type)) continue;
     const fi = fanIn.get(n.id) ?? 0;
     const fo = fanOut.get(n.id) ?? 0;
-    // Score: fan-in (most-depended-upon — show early as foundational) +
-    // fan-out (entry points). README-shaped paths get a small boost so they
-    // surface even when import edges miss them.
-    const isReadmeLike =
-      n.type === "document" ||
-      /\b(README|readme|index|main)\b/.test(n.path) ||
-      /\.md$/.test(n.path);
-    const hubScore = fi * 2 + fo + (isReadmeLike ? 3 : 0);
-    if (hubScore === 0 && !isReadmeLike) continue;
+
+    // Document-type nodes always belong in candidates (project may have no
+    // import edges at all). README at the project root is the canonical
+    // tour-step-1 anchor and gets a large boost so it out-scores typical
+    // import hubs on monorepos with ~10 internal imports per file.
+    const isDocumentType = n.type === "document";
+    const pathIsRoot = !n.path.includes("/");
+    const filename = n.name;
+    const isReadmeBasename = /^readme(\.|$)/i.test(filename);
+    const isRootReadme = pathIsRoot && isReadmeBasename;
+    const isRootMarkdown = pathIsRoot && /\.md$/i.test(filename);
+    const isEntryPointName = /^(index|main|app|server)\.(ts|tsx|js|jsx|py|go|rs)$/i.test(filename);
+
+    let scoreBoost = 0;
+    if (isRootReadme)
+      scoreBoost += 20; // out-scores typical fan-in hubs
+    else if (isReadmeBasename) scoreBoost += 10;
+    else if (isRootMarkdown) scoreBoost += 6;
+    else if (isDocumentType) scoreBoost += 4;
+    if (isEntryPointName) scoreBoost += 4;
+
+    const hubScore = fi * 2 + fo + scoreBoost;
+    if (hubScore === 0) continue;
     candidates.push({
       nodeId: n.id,
       name: n.name,
@@ -313,6 +336,15 @@ function buildTourPrompt(
     "- EVERY id in primaryNodeIds and relatedNodeIds MUST exactly match one of the",
     "  node ids listed in the CANDIDATE HUBS section below. Do not invent ids.",
     "- NEVER create a step with an empty primaryNodeIds array.",
+    "- NEVER repeat the same primaryNodeIds set across two steps. Each step's",
+    "  primary focus MUST be distinct from every other step's primary focus —",
+    "  even when steps cover related areas. A node may appear in `relatedNodeIds`",
+    "  of multiple steps, but its appearance as PRIMARY must be unique across the tour.",
+    "- The Step 1 PRIMARY node MUST be a README / overview document when one is",
+    "  available in the candidate hubs (look for `type=document` or a README.md path",
+    "  at the project root). If no such node exists, pick the top-scoring code entry",
+    "  point (index / main / app). Do NOT pick an orchestration / pipeline file as",
+    "  the Step 1 primary if a project-overview document is available.",
     "- Steps MUST tell a story — start with the project overview (README-like / entry",
     "  point), then move to core types / config, then feature modules, then supporting",
     "  infrastructure. Group tightly-coupled nodes into a single step where appropriate.",
@@ -421,19 +453,25 @@ function normalizeRawTourStepArray(parsed: unknown[]): RawTourStep[] {
       typeof o.order === "number" && Number.isFinite(o.order) ? Math.trunc(o.order) : -1;
     const title = typeof o.title === "string" ? o.title.trim() : "";
     const description = typeof o.description === "string" ? o.description.trim() : "";
-    // Accept both `primaryNodeIds` (preferred) and the upstream agent's
-    // `nodeIds` (fallback — the model may emit by habit). When `nodeIds`
-    // arrives, treat the first element as primary and the rest as related,
-    // matching the local TourStep contract.
+    // Accept both `primaryNodeIds` (preferred — local TourStep contract) and
+    // the upstream agent's flat `nodeIds` (fallback — the model may emit by
+    // habit). Round-2 Codex finding #8: when `nodeIds` arrives, every entry
+    // represents an EQUAL focus node for that step (upstream's nodeIds is a
+    // flat "covered nodes" list, not a primary-vs-related ranking). A prior
+    // version mapped only `nodeIds[0]` to primary and discarded the rest
+    // into `related`, which silently downgraded focus for every multi-node
+    // step. We now map the full upstream nodeIds list to `primaryNodeIds`,
+    // leaving `relatedNodeIds` empty — preserves the step's intended
+    // coverage and lets the downstream graph-reviewer judge step focus
+    // explicitly instead of inheriting a parser-side mis-policy.
     let primaryNodeIds: string[];
     let relatedNodeIds: string[];
     if (Array.isArray(o.primaryNodeIds) || Array.isArray(o.relatedNodeIds)) {
       primaryNodeIds = coerceStringArray(o.primaryNodeIds);
       relatedNodeIds = coerceStringArray(o.relatedNodeIds);
     } else if (Array.isArray(o.nodeIds)) {
-      const flat = coerceStringArray(o.nodeIds);
-      primaryNodeIds = flat.slice(0, 1);
-      relatedNodeIds = flat.slice(1);
+      primaryNodeIds = coerceStringArray(o.nodeIds);
+      relatedNodeIds = [];
     } else {
       primaryNodeIds = [];
       relatedNodeIds = [];
@@ -456,6 +494,11 @@ function coerceStringArray(v: unknown): string[] {
  *  - Drop unknown node ids (LLM hallucinations); record once per id.
  *  - Drop steps that end up with empty primaryNodeIds (after filtering).
  *  - Dedupe by `order`: first occurrence wins; duplicates discarded.
+ *  - Dedupe by primary node set (round-2 Codex finding #7): if a later
+ *    step's `primaryNodeIds` (as a set) matches an earlier accepted step's,
+ *    the later step is dropped — two tour steps with the same focus mislead
+ *    the customer reader, and the earlier step always owns the slot. The
+ *    dropped step is recorded in `anomalies.droppedSteps` for triage.
  *  - Sort by original order, then re-number sequentially 1..N.
  *
  *  Returns the local TourStep[] shape plus the anomalies bag. */
@@ -476,9 +519,20 @@ function normalizeTourSteps(
     return out;
   };
 
+  // Order-insensitive key over primaryNodeIds. Using a sorted-join lets two
+  // steps with the same {A, B} set but different array order register as a
+  // duplicate; the customer would experience them as "the same step
+  // appearing twice" regardless of how the LLM happened to order the ids.
+  const primaryKey = (ids: readonly string[]): string => [...ids].sort().join("");
+
+  // Sort RAW steps by order BEFORE dedup so the "earlier wins" rule operates
+  // on the LLM-intended sequence (the input list might arrive out of order).
+  const ordered = [...raw].sort((a, b) => a.order - b.order);
+
   const accepted: RawTourStep[] = [];
   const seenOrders = new Set<number>();
-  for (const step of raw) {
+  const seenPrimaryKeys = new Map<string, number>();
+  for (const step of ordered) {
     if (seenOrders.has(step.order)) {
       duplicateOrders.push(step.order);
       continue;
@@ -492,7 +546,17 @@ function normalizeTourSteps(
       });
       continue;
     }
+    const key = primaryKey(primary);
+    const earlierOrder = seenPrimaryKeys.get(key);
+    if (earlierOrder !== undefined) {
+      droppedSteps.push({
+        order: step.order,
+        reason: `duplicate primaryNodeIds — earlier step at order=${earlierOrder} owns this primary set`,
+      });
+      continue;
+    }
     seenOrders.add(step.order);
+    seenPrimaryKeys.set(key, step.order);
     accepted.push({
       order: step.order,
       title: step.title,
@@ -502,7 +566,6 @@ function normalizeTourSteps(
     });
   }
 
-  accepted.sort((a, b) => a.order - b.order);
   const tour: TourStep[] = accepted.map((s, i) => ({
     stepNumber: i + 1,
     title: s.title,

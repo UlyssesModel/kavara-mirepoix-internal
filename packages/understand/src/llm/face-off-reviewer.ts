@@ -212,12 +212,12 @@ async function runOneReviewer(
     const result = await client.prompt(sessionId, spec.buildPrompt(brief));
     if (result.stopReason !== "end_turn") {
       throw new Error(
-        `face-off-review[${spec.id}]: stopReason="${result.stopReason}" (expected "end_turn")`,
+        `${logTag}[${spec.id}]: stopReason="${result.stopReason}" (expected "end_turn")`,
       );
     }
     const rawText = result.text;
     if (!rawText.trim()) {
-      throw new Error(`face-off-review[${spec.id}]: LLM returned empty response`);
+      throw new Error(`${logTag}[${spec.id}]: LLM returned empty response`);
     }
     if (result.toolCalls.length > 0) {
       const summary = result.toolCalls
@@ -230,7 +230,7 @@ async function runOneReviewer(
           `tool call(s) despite "do not use tools". ${summary}${more}\n`,
       );
     }
-    parsed = parseVerdict(rawText, spec.id);
+    parsed = parseVerdict(rawText, spec.id, logTag);
   } catch (err) {
     failure = err instanceof Error ? err : new Error(String(err));
   } finally {
@@ -315,6 +315,7 @@ async function runOneReviewer(
 function parseVerdict(
   text: string,
   reviewerId: ReviewerSpec["id"],
+  logTag: string,
 ): { verdict: "approve" | "block"; notes: string } {
   const json = extractJsonObject(text);
   if (!json) {
@@ -333,7 +334,7 @@ function parseVerdict(
     return {
       verdict: "block",
       notes:
-        `face-off-review[${reviewerId}]: response did not contain a recoverable ` +
+        `${logTag}[${reviewerId}]: response did not contain a recoverable ` +
         `JSON object. Raw text:\n${text}`,
     };
   }
@@ -346,14 +347,14 @@ function parseVerdict(
     return {
       verdict: "block",
       notes:
-        `face-off-review[${reviewerId}]: JSON.parse failed ` +
+        `${logTag}[${reviewerId}]: JSON.parse failed ` +
         `(${(err as Error).message}). Raw extracted JSON:\n${json}`,
     };
   }
   if (typeof parsed !== "object" || parsed === null) {
     return {
       verdict: "block",
-      notes: `face-off-review[${reviewerId}]: parsed JSON is not an object. Raw text:\n${text}`,
+      notes: `${logTag}[${reviewerId}]: parsed JSON is not an object. Raw text:\n${text}`,
     };
   }
   const obj = parsed as Record<string, unknown>;
@@ -376,7 +377,7 @@ function parseVerdict(
     return {
       verdict: "block",
       notes:
-        `face-off-review[${reviewerId}]: parsed JSON has unrecognized verdict ` +
+        `${logTag}[${reviewerId}]: parsed JSON has unrecognized verdict ` +
         `"${rawVerdict || "(missing)"}". Raw text:\n${text}`,
     };
   }
