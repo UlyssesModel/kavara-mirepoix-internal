@@ -9,6 +9,9 @@
   "bin": {
     "mirepoix-acp": "./src/index.ts"
   },
+  "scripts": {
+    "start:stdio": "bun src/index.ts"
+  },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.22.1",
     "@mirepoix/ai": "workspace:*",
