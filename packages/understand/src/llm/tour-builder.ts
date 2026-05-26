@@ -271,8 +271,17 @@ function computeCandidateHubs(graph: KnowledgeGraph, topN: number): CandidateHub
     const filename = n.name;
     const filenameLower = filename.toLowerCase();
     const isMarkdownExt = /\.(md|mdx)$/i.test(filename);
-    const isReadmeMarkdown = isMarkdownExt && /^readme[.\-_]/i.test(filename);
-    const isCanonicalReadme = filenameLower === "readme.md";
+    // Round-4 Codex finding #1: an extensionless `README` file at the project
+    // root is the historical Unix convention (RFC 822, plain-text manpages)
+    // and many repos still ship one. Treat it the same as `README.md` so the
+    // tour-builder doesn't drop it from the Step-1 candidate set just because
+    // the extension is absent. The `isMarkdownExt` test stays in place for
+    // the rest of the boost ladder so non-markdown root files don't inherit
+    // the documentation boost.
+    const isExtensionlessReadme = filenameLower === "readme";
+    const isReadmeMarkdown =
+      isExtensionlessReadme || (isMarkdownExt && /^readme[.\-_]/i.test(filename));
+    const isCanonicalReadme = filenameLower === "readme.md" || isExtensionlessReadme;
     const isRootReadmeMarkdown = pathIsRoot && isReadmeMarkdown;
     const isRootOtherMarkdown = pathIsRoot && isMarkdownExt && !isReadmeMarkdown;
     const isEntryPointName = /^(index|main|app|server)\.(ts|tsx|js|jsx|py|go|rs)$/i.test(filename);

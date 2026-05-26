@@ -102,8 +102,17 @@ export function assembleKnowledgeGraph(
   const nodeIds = new Set<string>();
   const filePathToNodeId = new Map<string, string>();
 
+  // File node ids share the same field-safety contract as function/class
+  // ids (round-4 Codex finding #2): a `:` in a project-relative path would
+  // collide the `file:` prefix delimiter. POSIX paths can legitimately
+  // contain `:` (`src:foo/bar.ts` is valid on Linux/macOS), so we
+  // percent-encode the path before stamping it into the id. The map from
+  // raw path → encoded node id is preserved so every other site that
+  // resolves a file path to its node id (layer fileIds, import edges,
+  // domain fileIds) lands on the canonical encoded form without each
+  // call site needing to know about the encoding.
   for (const f of deterministicScan.scan.files) {
-    const nodeId = `file:${f.path}`;
+    const nodeId = `file:${escapeIdField(f.path)}`;
     if (nodeIds.has(nodeId)) {
       throw new Error(
         `assembleKnowledgeGraph: duplicate file node id "${nodeId}". ` +
