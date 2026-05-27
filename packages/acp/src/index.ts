@@ -11,6 +11,9 @@
 // environment state.
 
 import { Readable, Writable } from "node:stream";
+import { homedir } from "node:os";
+import { mkdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   AgentSideConnection,
   ndJsonStream,
@@ -29,15 +32,18 @@ import {
   type SessionUpdate,
 } from "@agentclientprotocol/sdk";
 import { DEFAULT_SYSTEM_PROMPT, executeTool, tools } from "@mirepoix/coding";
-import { Session, run, type RunOptions } from "@mirepoix/core";
+import { Session, run, type RunOptions, createSessionLogger } from "@mirepoix/core";
 
 const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/v1";
-const DEFAULT_MODEL = "qwen2.5-coder:32b-instruct";
+const DEFAULT_MODEL = "qwen3-coder:30b";
+const DEFAULT_SESSION_DIR = `${homedir()}/.local/share/mirepoix/sessions`;
 
 interface SessionState {
   mirepoixSession: Session;
   cwd: string;
   abortController: AbortController | null;
+  disposeLog: () => void;
+  systemPromptFilePath: string | null;
 }
 
 class MirepoixAgent implements Agent {
@@ -45,11 +51,13 @@ class MirepoixAgent implements Agent {
   private readonly sessions = new Map<string, SessionState>();
   private readonly ollamaUrl: string;
   private readonly model: string;
+  private readonly sessionDir: string;
 
   constructor(connection: AgentSideConnection) {
     this.connection = connection;
     this.ollamaUrl = process.env.OLLAMA_URL ?? DEFAULT_OLLAMA_URL;
     this.model = process.env.MIREPOIX_MODEL ?? DEFAULT_MODEL;
+    this.sessionDir = process.env.MIREPOIX_SESSION_DIR ?? DEFAULT_SESSION_DIR;
   }
 
   async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
@@ -66,9 +74,23 @@ class MirepoixAgent implements Agent {
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
+    // Load system prompt (file when --system-prompt-file; else DEFAULT_SYSTEM_PROMPT).
+    let systemPrompt = DEFAULT_SYSTEM_PROMPT;
+    let systemPromptFilePath: string | null = null;
+    if (process.env.MIREPOIX_SYSTEM_PROMPT_FILE) {
+      try {
+        const promptPath = resolve(process.env.MIREPOIX_SYSTEM_PROMPT_FILE);
+        systemPrompt = readFileSync(promptPath, "utf-8");
+        systemPromptFilePath = promptPath;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Cannot read MIREPOIX_SYSTEM_PROMPT_FILE: ${message}`);
+      }
+    }
+
     const mirepoixSession = new Session({
       id: sessionId,
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      systemPrompt,
     });
 
     let cwd = params.cwd ?? process.cwd();
@@ -78,11 +100,20 @@ class MirepoixAgent implements Agent {
       cwd = linuxPrefix + cwd.slice(macPrefix.length);
     }
 
+    // Create session log file
+    const sessionLogPath = `${this.sessionDir}/${sessionId}.jsonl`;
+    mkdirSync(this.sessionDir, { recursive: true });
+    const disposeLog = createSessionLogger(mirepoixSession.bus, sessionLogPath);
+
     this.sessions.set(sessionId, {
       mirepoixSession,
       cwd,
       abortController: null,
+      disposeLog,
+      systemPromptFilePath,
     });
+
+    process.stderr.write(`[mirepoix-acp] session ${sessionId} model ${this.model}\n`);
 
     return { sessionId };
   }
@@ -111,7 +142,7 @@ class MirepoixAgent implements Agent {
         tools,
         executeTool,
         workingDir: state.cwd,
-        systemPromptFile: null,
+        systemPromptFile: state.systemPromptFilePath,
       };
       await run(runOptions);
 
@@ -128,6 +159,8 @@ class MirepoixAgent implements Agent {
   async cancel(params: CancelNotification): Promise<void> {
     const state = this.sessions.get(params.sessionId);
     state?.abortController?.abort();
+    state?.disposeLog();
+    this.sessions.delete(params.sessionId);
   }
 
   private subscribeBus(state: SessionState, acpSessionId: string): Array<() => void> {
